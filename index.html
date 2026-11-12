@@ -248,7 +248,7 @@ const SERIES_COLORS = {
  'Mega Evolution Series':['#7a5cc8','#4b3394','#e5ddf7'],'Promos & Other':['#7a9b7a','#4f6e4f','#dfeadf']
 };
 const TYPE_COLORS = {Grass:'#78C850',Fire:'#F08030',Water:'#6890F0',Lightning:'#F8D030',Psychic:'#F85888',Fighting:'#C03028',Darkness:'#705848',Metal:'#B8B8D0',Dragon:'#7038F8',Fairy:'#EE99AC',Colorless:'#A8A878'};
-const LOCS = [['binder','Binder'],['bulk','Bulk'],['other','Other']];
+const LOCS = [['binder','Binder'],['bulk','Bulk']];
 const LOCNAME = Object.fromEntries(LOCS);
 function sc(series){return SERIES_COLORS[series]||SERIES_COLORS['Promos & Other'];}
 function styleVars(series){const c=sc(series);return `--hc:${c[0]};--hb:${c[1]};--hl:${c[2]}`;}
@@ -269,7 +269,8 @@ const LI={binder:0,bulk:1,other:2};
 function qn(e){ return e? (e[0]||0)+(e[1]||0)+(e[2]||0) : 0; }
 function locsOf(e){ return e? LOCS.filter(([k])=>e[LI[k]]>0) : []; }
 // old format [qty,'loc'] -> new [binder,bulk,other]
-function normLoc(c){ for(const k in c){ const e=c[k]; if(!e) continue; if(typeof e[1]==='string'){ const n=[0,0,0]; const l=e[1]==='deck'?'other':e[1]; n[LI[l]??2]=e[0]||0; c[k]=n; } if(!qn(c[k])) delete c[k]; } return c; }
+function normLoc(c){ for(const k in c){ const e=c[k]; if(!e) continue; if(typeof e[1]==='string'){ const n=[0,0,0]; const l=e[1]==='binder'?'binder':'bulk'; n[LI[l]]=e[0]||0; c[k]=n; }
+    if(c[k][2]){ c[k][1]=(c[k][1]||0)+c[k][2]; c[k][2]=0; } if(!qn(c[k])) delete c[k]; } return c; }
 function lsLoad(){try{const j=JSON.parse(localStorage.getItem(LS)||'null');if(j){S.owned=j.owned||{}; Object.values(S.owned).forEach(normLoc);S.binders=j.binders||{};S.config=j.config||{};S.images=j.images||{};}}catch(e){}}
 function lsSave(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}}
 
@@ -368,20 +369,28 @@ function maybeMigrate(local){
 /* ================= DERIVED ================= */
 function cardKey(row){return row[0];}
 function ownedOf(setId){return S.owned[setId]||{};}
+// Completion goal: how many of every card counts as complete (default 2 = regular + reverse holo, or 2 copies of cards with only one version)
+function GOAL(){ return 2; }
+function compHTML(got,need){ const p=need?got*100/need:0; const t=need?(p>0&&p<0.1?'<0.1':(Math.floor(p*10)/10)):0; return `<div class="prog" title="${got} of ${need}"><div class="bar"><i style="width:${Math.min(100,p)}%"></i></div><span class="nw"><b>${t}%</b></span></div>`; }
+function pctTxt(a,b){ if(!b) return '0'; const p=a*100/b; return p>0&&p<0.1?'<0.1':String(Math.floor(p*10)/10); }
+function barRow(label,a,b,color){ const p=b?Math.min(100,a*100/b):0; return `<div class="prog" style="margin:2px 0" title="${label}: ${a} of ${b}"><span style="width:52px;font-size:11px;color:#555">${label}</span><div class="bar"><i style="width:${p}%;${color?`background:${color}`:''}"></i></div><span class="nw" style="min-width:92px;text-align:right">${a}/${b} · <b>${pctTxt(a,b)}%</b></span></div>`; }
+const SPECIAL_BAR='linear-gradient(90deg,#8e6fd8,#4fb3d9,#7fd08a)';
+function dualHTML(st){ return barRow('Regular',st.have,st.total)+barRow('Special',st.full,st.total,SPECIAL_BAR); }
 function setStats(setId){
   const o=ownedOf(setId), cards=T.cards[setId]||[]; let have=0, copies=0; const byLoc={binder:0,bulk:0,other:0}, copiesByLoc={binder:0,bulk:0,other:0};
   for(const r of cards){const e=o[r[0]]; const q=qn(e); if(q>0){have++;copies+=q; for(const [k] of LOCS){ const n=e[LI[k]]||0; if(n){ byLoc[k]++; copiesByLoc[k]+=n; } } }}
   let main=0; for(const r of cards){ if(isMainNum(r[1],SETS[setId].printed)){const e=o[r[0]]; if(qn(e)>0) main++;} }
-  return {have,copies,total:cards.length,byLoc,copiesByLoc,main};
+  const G=GOAL(); let got=0, full=0; for(const r of cards){ const q=qn(o[r[0]]); got+=Math.min(q,G); if(q>=G) full++; }
+  return {have,copies,total:cards.length,byLoc,copiesByLoc,main,got,need:cards.length*G,full};
 }
 function isMainNum(num,printed){const n=parseInt(num,10); return /^\d+$/.test(num) && n>=1 && n<=printed;}
 function bindersForSet(setId){return Object.values(S.binders).filter(b=>(b.sets||[]).includes(setId));}
 // One entry per pocket: each card gets b.copies pockets (default 2: Regular + Holo); secret/extra cards 1 unless turned off; per-card overrides in b.slotOv
-function slotNames(b){ const n=(b.slotNames&&b.slotNames.length)? b.slotNames : ['Regular','Holo','Extra']; return n; }
-function cardSlotCount(b,setId,r){ const ov=(b.slotOv||{})[setId+'|'+r[0]]; if(ov!=null) return ov; const c=+(b.copies??2); if(!isMainNum(r[1],SETS[setId].printed) && b.secretSingle!==false) return Math.min(1,c); return c; }
+function slotNames(b){ const n=(b.slotNames&&b.slotNames.length)? b.slotNames : ['Regular','Reverse holo','Copy 3']; return n; }
+function cardSlotCount(b,setId,r){ const ov=(b.slotOv||{})[setId+'|'+r[0]]; if(ov!=null) return ov; const c=+(b.copies??2); if(!isMainNum(r[1],SETS[setId].printed) && b.secretSingle===true) return Math.min(1,c); return c; }
 function binderSlots(b){
   const out=[]; const names=slotNames(b);
-  (b.sets||[]).filter(id=>SETS[id]).forEach(id=>{ const s=SETS[id]; T.cards[id].forEach(r=>{ const n=cardSlotCount(b,id,r); for(let v=0;v<n;v++) out.push({s,r,v,n,vname: n>1? (names[v]||('Copy '+(v+1))) : (isMainNum(r[1],s.printed)? '' : 'Holo')}); }); });
+  (b.sets||[]).filter(id=>SETS[id]).forEach(id=>{ const s=SETS[id]; T.cards[id].forEach(r=>{ const n=cardSlotCount(b,id,r); for(let v=0;v<n;v++) out.push({s,r,v,n,vname: n>1? (isMainNum(r[1],s.printed)? (names[v]||('Copy '+(v+1))) : 'Copy '+(v+1)) : ''}); }); });
   return out;
 }
 function slotHave(b,x){ const e=ownedOf(x.s.id)[x.r[0]]; const c = b.colorBy==='owned'? qn(e) : (e?e[0]:0); return x.v < c; }
@@ -456,9 +465,11 @@ document.addEventListener('click',e=>{
 document.getElementById('search').addEventListener('submit',e=>{e.preventDefault(); lastSearch=document.getElementById('q').value.trim(); if(!lastSearch) return; if(curView==='search') route(); else go('search');});
 
 function countHTML(t){
-  return `<div class="stat" style="font-size:28px">${t.copies.toLocaleString()}</div><div>cards owned in total</div>
-  <div style="margin-top:6px;line-height:1.6">${t.have.toLocaleString()} different cards<br>${t.started} sets started · ${t.complete} complete</div>
-  <div style="margin-top:6px">${LOCS.map(([k,n])=>`<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span class="loc loc-${k}">${n}</span><b>${(t.copiesByLoc[k]||0).toLocaleString()}</b></div>`).join('')}</div>`;
+  return `<div class="stat" style="font-size:28px">${t.copies.toLocaleString()}</div><div>cards in total</div>
+  <div style="margin-top:4px"><b>${t.have.toLocaleString()}</b> unique cards <span style="color:#777">(regular set)</span></div>
+  <div style="margin-top:2px"><b>${t.full.toLocaleString()}</b> special <span style="color:#777">(2nd copies)</span></div>
+  <div style="margin-top:4px;line-height:1.5">${t.started} sets started · ${t.complete} regular / ${t.specialComplete} special complete</div>
+  <table style="width:100%;margin-top:6px;border-spacing:0 3px;font-size:12px"><tr style="color:#777;font-size:11px"><td></td><td style="text-align:right">total</td><td style="text-align:right">unique</td></tr>${LOCS.map(([k,n])=>`<tr><td><span class="loc loc-${k}">${n}</span></td><td style="text-align:right"><b>${(t.copiesByLoc[k]||0).toLocaleString()}</b></td><td style="text-align:right">${(t.byLoc[k]||0).toLocaleString()}</td></tr>`).join('')}</table>`;
 }
 function renderSide(){
   document.getElementById('sideCount').innerHTML=countHTML(totals());
@@ -469,26 +480,26 @@ function renderSide(){
 
 /* ================= VIEWS ================= */
 function totals(){
-  let have=0,total=0,copies=0; const byLoc={binder:0,bulk:0,other:0}, copiesByLoc={binder:0,bulk:0,other:0}; let started=0, complete=0;
-  T.sets.forEach(s=>{const st=setStats(s.id); have+=st.have; total+=st.total; copies+=st.copies; for(const k in st.byLoc){ byLoc[k]=(byLoc[k]||0)+st.byLoc[k]; copiesByLoc[k]=(copiesByLoc[k]||0)+st.copiesByLoc[k]; } if(st.have) started++; if(st.have&&st.have>=st.total) complete++;});
-  return {have,total,copies,byLoc,copiesByLoc,started,complete};
+  let have=0,total=0,copies=0,got=0,need=0,full=0; const byLoc={binder:0,bulk:0,other:0}, copiesByLoc={binder:0,bulk:0,other:0}; let started=0, complete=0, specialComplete=0;
+  T.sets.forEach(s=>{const st=setStats(s.id); have+=st.have; total+=st.total; copies+=st.copies; got+=st.got; need+=st.need; full+=st.full; for(const k in st.byLoc){ byLoc[k]=(byLoc[k]||0)+st.byLoc[k]; copiesByLoc[k]=(copiesByLoc[k]||0)+st.copiesByLoc[k]; } if(st.have) started++; if(st.have&&st.have>=st.total) complete++; if(st.total&&st.full>=st.total) specialComplete++;});
+  return {have,total,copies,got,need,full,byLoc,copiesByLoc,started,complete,specialComplete};
 }
 function viewHome(el){
   const t=totals();
   const recent=[...T.sets].filter(s=>s.release<=TODAY).sort((a,b)=>b.release.localeCompare(a.release)).slice(0,6);
   const upcoming=[...T.sets].filter(s=>s.release>TODAY).sort((a,b)=>a.release.localeCompare(b.release));
-  const startedSets=T.sets.map(s=>({s,st:setStats(s.id)})).filter(x=>x.st.have).sort((a,b)=>b.st.have/b.st.total-a.st.have/a.st.total).slice(0,8);
+  const startedSets=T.sets.map(s=>({s,st:setStats(s.id)})).filter(x=>x.st.have).sort((a,b)=>(b.st.have/b.st.total-a.st.have/a.st.total)||(b.st.full/b.st.total-a.st.full/a.st.total)).slice(0,8);
   const bs=Object.values(S.binders); const todo=bs.map(b=>({b,st:binderStatus(b)})).filter(x=>!x.st.ready);
   el.innerHTML=`
   <h1 class="ft">Main page</h1><div class="sub">From ${esc(S.config.title||'My Collectapedia')}, your personal card encyclopedia</div>
-  <div class="mainbox"><b>Welcome!</b> This wiki tracks every English expansion (${T.sets.length} sets, ${t.total.toLocaleString()} cards). Open any expansion to tick off the cards you own and record where each one lives: a binder, the bulk box or somewhere else. Use the <a data-go="binders">Binder workshop</a> to plan binders, pages and labels.</div>
+  <div class="mainbox"><b>Welcome!</b> This wiki tracks every English expansion (${T.sets.length} sets, ${t.total.toLocaleString()} cards). Open any expansion to tick off the cards you own and record where each one lives: a binder, or the bulk box. Use the <a data-go="binders">Binder workshop</a> to plan binders, pages and labels.</div>
   <div class="grid">
-    <div class="box"><h4>Collection at a glance</h4><div class="in"><div class="stat">${t.copies.toLocaleString()}</div>cards owned in total (${t.have.toLocaleString()} different)<div style="margin-top:6px">${progHTML(t.have,t.total)}</div><div style="margin-top:6px;font-size:12.5px">${t.started} sets started · ${t.complete} complete</div></div></div>
-    <div class="box"><h4>Where your cards are</h4><div class="in">${LOCS.map(([k,n])=>`<div class="check"><span class="loc loc-${k}">${n}</span><span class="lbl"></span><b>${(t.copiesByLoc[k]||0).toLocaleString()}</b></div>`).join('')}<div style="margin-top:6px"><a data-go="find">Find a card →</a></div></div></div>
+    <div class="box"><h4>Collection at a glance</h4><div class="in"><div class="check"><span class="lbl">Total cards</span><b class="stat" style="font-size:22px">${t.copies.toLocaleString()}</b></div><div class="check"><span class="lbl">Unique cards <span style="font-weight:400;color:#777">(regular set)</span></span><b class="stat" style="font-size:22px">${t.have.toLocaleString()}</b></div><div class="check"><span class="lbl">Special cards <span style="font-weight:400;color:#777">(reverse holo / 2nd copy)</span></span><b class="stat" style="font-size:22px">${t.full.toLocaleString()}</b></div><div style="margin-top:6px;font-size:12.5px">${t.started} sets started · <b>${t.complete}</b> regular sets complete · <b>${t.specialComplete}</b> special sets complete</div></div></div>
+    <div class="box"><h4>Where your cards are</h4><div class="in"><div class="check" style="font-size:11.5px;color:#777"><span class="lbl"></span><span style="width:60px;text-align:right">total</span><span style="width:70px;text-align:right">unique</span></div>${LOCS.map(([k,n])=>`<div class="check"><span class="loc loc-${k}">${n}</span><span class="lbl"></span><b style="width:60px;text-align:right">${(t.copiesByLoc[k]||0).toLocaleString()}</b><span style="width:70px;text-align:right">${(t.byLoc[k]||0).toLocaleString()}</span></div>`).join('')}<div style="margin-top:6px"><a data-go="find">Find a card →</a></div></div></div>
     <div class="box"><h4>Binder to-do</h4><div class="in">${!bs.length?'No binders planned yet. <a data-go="binders">Plan one →</a>': !todo.length?'<span class="tag ok">All binders ready</span>': todo.map(x=>`<div style="margin-bottom:4px"><b>${esc(x.b.name)}</b>: ${x.st.todo.map(esc).join(', ')}</div>`).join('')}</div></div>
   </div>
   <h2>Most complete expansions</h2>
-  ${startedSets.length? `<div class="roundy"><table><tr><th>Expansion</th><th>Series</th><th style="width:40%">Progress</th></tr>${startedSets.map(x=>`<tr><td><a data-set="${x.s.id}">${esc(x.s.name)}</a></td><td>${esc(x.s.series)}</td><td>${progHTML(x.st.have,x.st.total)}</td></tr>`).join('')}</table></div>` : '<p>You haven\'t marked any cards yet. Start with an <a data-go="expansions">expansion</a>.</p>'}
+  ${startedSets.length? `<div class="roundy"><table><tr><th>Expansion</th><th>Series</th><th>Total cards</th><th style="width:42%">Regular set / Special set</th></tr>${startedSets.map(x=>`<tr><td><a data-set="${x.s.id}">${esc(x.s.name)}</a></td><td>${esc(x.s.series)}</td><td class="c">${x.st.copies}</td><td>${dualHTML(x.st)}</td></tr>`).join('')}</table></div>` : '<p>You haven\'t marked any cards yet. Start with an <a data-go="expansions">expansion</a>.</p>'}
   <h2>Latest expansions</h2>
   <div class="roundy" style="${styleVars(recent[0]?recent[0].series:'')}"><table><tr><th>Expansion</th><th>Code</th><th>Cards</th><th>Released</th></tr>${recent.map(s=>`<tr><td><a data-set="${s.id}">${esc(s.name)}</a></td><td class="c"><span class="code">${esc(s.code)}</span></td><td class="c">${s.total}</td><td>${fmtDate(s.release)}</td></tr>`).join('')}</table></div>
   ${upcoming.length?`<p><b>Upcoming:</b> ${upcoming.map(s=>`<a data-set="${s.id}">${esc(s.name)}</a> (${fmtDate(s.release)})`).join(', ')}</p>`:''}
@@ -504,7 +515,7 @@ function viewExpansions(el){
     let sh=0,stt=0; rows.forEach(s=>{const st=setStats(s.id);sh+=st.have;stt+=st.total;});
     return `<h2 id="ser${i}">${esc(n)}</h2>
     <div class="roundy" style="${styleVars(n)}"><table>
-      <tr><th>#</th><th>Symbol</th><th class="hide-m">Logo</th><th>Expansion</th><th class="hide-m">Code</th><th>Cards</th><th class="hide-m">Release date</th><th style="min-width:150px">My cards</th><th class="hide-m">Binder</th></tr>
+      <tr><th>#</th><th>Symbol</th><th class="hide-m">Logo</th><th>Expansion</th><th class="hide-m">Code</th><th>Cards</th><th class="hide-m">Release date</th><th style="min-width:260px">Regular set / Special set</th><th class="hide-m">Binder</th></tr>
       ${rows.map(s=>{const st=setStats(s.id); const bs=bindersForSet(s.id); const up=s.release>TODAY;
         return `<tr class="${st.have&&st.have>=st.total?'have':''}"><td class="c">${s.no||'—'}</td>
         <td class="c">${imgTag(s.id,'sym',null,'max-height:26px;max-width:40px')||'<span style="color:#ccc">—</span>'}</td>
@@ -513,7 +524,7 @@ function viewExpansions(el){
         <td class="c hide-m">${s.code?`<span class="code">${esc(s.code)}</span>`:'—'}</td>
         <td class="c nw">${s.printed}${s.total!==s.printed?` <span style="color:#777">(${s.total})</span>`:''}</td>
         <td class="c hide-m nw">${fmtDate(s.release)}</td>
-        <td>${progHTML(st.have,st.total)}</td>
+        <td>${dualHTML(st)}${st.copies?`<div style="font-size:11px;color:#666">${st.copies} cards in total · ${LOCS.filter(([k])=>st.copiesByLoc[k]).map(([k,n])=>`${n} ${st.copiesByLoc[k]}`).join(' · ')}</div>`:''}</td>
         <td class="c hide-m">${bs.length? bs.map(b=>{const x=binderStatus(b);return `<span class="tag ${x.ready?'ok':'warn'}" title="${x.ready?'Ready':esc('To do: '+x.todo.join(', '))}">${esc(b.name)}</span>`;}).join(' ') : '<span style="color:#aaa">—</span>'}</td></tr>`;}).join('')}
     </table></div>`;
   }).join('')}`;
@@ -546,7 +557,9 @@ function viewSet(el,id,soft){
       ${extra?`<tr><th>Secret &amp; extra</th><td>${extra}</td></tr>`:''}
       ${s.subs.length?`<tr><th>Subsets</th><td>${s.subs.map(x=>esc(x[0])+' ('+x[1]+')').join('<br>')}</td></tr>`:''}
       <tr><th>Legal in</th><td>${s.legal.map(x=>x[0].toUpperCase()+x.slice(1)).join(', ')||'—'}</td></tr>
-      <tr><th>I own</th><td>${progHTML(st.have,st.total)}<div style="font-size:11.5px;color:#555;margin-top:2px">${st.main}/${s.printed} of the main set · ${st.copies} copies</div></td></tr>
+      <tr><th>Total cards</th><td><b>${st.copies}</b></td></tr>
+      <tr><th>Regular set</th><td><b>${st.have}</b> of ${st.total} · <b>${pctTxt(st.have,st.total)}%</b><div class="prog"><div class="bar"><i style="width:${st.total?st.have*100/st.total:0}%"></i></div></div><div style="font-size:11.5px;color:#555">${st.main}/${s.printed} of the main set</div></td></tr>
+      <tr><th>Special set</th><td><b>${st.full}</b> of ${st.total} · <b>${pctTxt(st.full,st.total)}%</b><div class="prog"><div class="bar"><i style="width:${st.total?st.full*100/st.total:0}%;background:${SPECIAL_BAR}"></i></div></div><div style="font-size:11.5px;color:#555">reverse holos / holos / 2nd copies</div></td></tr>
       <tr><th>Binder</th><td>${bs.length? bs.map(b=>`<a data-binder="${b.id}">${esc(b.name)}</a>`).join('<br>') : `<a class="rw" id="mkBinder">Plan a binder</a><span class="ro-only"></span>`}</td></tr>
     </table>
     <div style="display:flex;justify-content:space-between;color:#fff;padding:4px 6px 0;font-size:12px">
@@ -557,7 +570,7 @@ function viewSet(el,id,soft){
   <h1 class="ft">${esc(s.name)} (TCG)</h1>
   <div class="sub">From ${esc(S.config.title||'My Collectapedia')} · <a data-go="expansions">List of expansions</a></div>
   <p><b>${esc(s.name)}</b> ${s.code?`(<i>${esc(s.code)}</i>) `:''}is ${ordinal} of the Pokémon Trading Card Game. It ${s.release>TODAY?'releases':'was released'} on ${fmtDate(s.release)}. The set has ${s.printed} numbered cards${extra?`, plus ${extra} secret rares and extra cards for ${cards.length} in total`:''}${s.subs.length?`, including the ${s.subs.map(x=>esc(x[0])).join(' and ')} subset${s.subs.length>1?'s':''}`:''}.</p>
-  <p>You own <b>${st.have}</b> of its ${cards.length} cards (${pct(st.have,cards.length)}%). ${st.have? 'They are stored as follows: '+LOCS.filter(([k])=>st.byLoc[k]).map(([k,n])=>`<span class="loc loc-${k}">${n}</span> ${st.byLoc[k]}`).join(' &nbsp;') : ''}</p>
+  <p>You have <b>${st.copies}</b> card${st.copies===1?'':'s'} from this set: <b>${st.have}</b> of its ${cards.length} unique cards. <b>Regular set:</b> ${st.have} of ${cards.length} (${pctTxt(st.have,cards.length)}%). <b>Special set</b> (reverse holos, holos and 2nd copies): ${st.full} of ${cards.length} (${pctTxt(st.full,cards.length)}%).${st.have?` Where they are: `+LOCS.filter(([k])=>st.copiesByLoc[k]).map(([k,n])=>`<span class="loc loc-${k}">${n}</span> ${st.copiesByLoc[k]} cop${st.copiesByLoc[k]===1?'y':'ies'} (${st.byLoc[k]} unique)`).join(' &nbsp; ') : ''}</p>
   ${bs.length? bs.map(b=>{const x=binderStatus(b);return `<p class="hat">Binder: <b>${esc(b.name)}</b> ${x.ready?'<span class="tag ok">ready</span>':`<span class="tag warn">to do: ${esc(x.todo.join(', '))}</span>`} · ${x.c.inBinder} of this set's cards marked as in the binder.</p>`;}).join(''):''}
   <h2>Rarity breakdown</h2>
   <div class="roundy" style="${styleVars(s.series)};display:inline-block;min-width:320px"><table><tr><th>Rarity</th><th>In set</th><th>Owned</th></tr>
@@ -565,14 +578,14 @@ function viewSet(el,id,soft){
   <div style="clear:both"></div>
   <h2>Set list</h2>
   <div class="toolbar">
-    <div class="grp" id="fseg">${[['all','All'],['missing','Missing'],['owned','Owned'],['binder','In binder'],['bulk','In bulk'],['other','Other']].map(([k,n])=>`<button class="seg ${setFilter===k?'on':''}" data-f="${k}">${n}</button>`).join('')}</div>
+    <div class="grp" id="fseg">${[['all','All'],['missing','Missing'],['owned','Have regular'],['need','Need special'],['done','Have special'],['binder','In binder'],['bulk','In bulk']].map(([k,n])=>`<button class="seg ${setFilter===k?'on':''}" data-f="${k}">${n}</button>`).join('')}</div>
     <input type="search" id="cardq" placeholder="Filter by name, number or artist" value="${esc(setQuery)}" style="width:220px">
     <div class="grp" id="vseg"><button class="seg ${setLayout==='list'?'on':''}" data-v="list">☰ List</button><button class="seg ${setLayout==='gallery'?'on':''}" data-v="gallery">▦ Gallery</button></div>
     <span class="rw"><label class="btn" style="cursor:pointer" title="Pick many card pictures at once. Name each file after the card number, e.g. 001.jpg or 25.png">📷 Upload card pictures…<input type="file" id="multiUp" accept="image/*" multiple hidden></label></span>
     <span class="rw" style="margin-left:auto"><select id="bulkAct"><option value="">Bulk actions…</option>${LOCS.map(([k,n])=>`<option value="add-${k}">Add 1 of each missing card shown → ${n}</option>`).join('')}${LOCS.map(([k,n])=>`<option value="mv-${k}">Move every copy shown → ${n}</option>`).join('')}<option value="clear">Clear all shown</option></select></span>
   </div>
   <div class="roundy" style="${styleVars(s.series)}"><div class="cap">${esc(s.name)} set list</div><table id="setTable" style="${setLayout==='gallery'?'display:none':''}">
-    <tr><th>No.</th><th>Card name</th><th class="hide-m">Type</th><th>Rarity</th><th>Have</th><th>Binder</th><th>Bulk</th><th>Other</th></tr>
+    <tr><th>No.</th><th>Card name</th><th class="hide-m">Type</th><th>Rarity</th><th>Have</th><th>Binder</th><th>Bulk</th></tr>
     <tbody id="setRows"></tbody>
   </table><div id="gallery" class="gallery" style="${setLayout==='gallery'?'':'display:none'}"></div></div>`;
   renderSetRows(id);
@@ -593,8 +606,10 @@ function visibleRows(id){
   const cards=T.cards[id], o=ownedOf(id), q=setQuery.trim().toLowerCase();
   return cards.filter(r=>{const e=o[r[0]]; const has=qn(e)>0;
     if(setFilter==='missing'&&has) return false;
+    if(setFilter==='need'&&(qn(e)>=GOAL()||!qn(e))) return false;
+    if(setFilter==='done'&&qn(e)<GOAL()) return false;
     if(setFilter==='owned'&&!has) return false;
-    if(['binder','bulk','other'].includes(setFilter)&&!(has&&e[LI[setFilter]]>0)) return false;
+    if(['binder','bulk'].includes(setFilter)&&!(has&&e[LI[setFilter]]>0)) return false;
     if(q && !(r[2].toLowerCase().includes(q) || r[1].toLowerCase()===q || (r[7]||'').toLowerCase().includes(q))) return false;
     return true;});
 }
@@ -606,14 +621,14 @@ function rowHTML(id,r){
     <td><div style="display:flex;align-items:center;gap:8px">${imgTag(id,'card',r[0],'height:42px;border-radius:3px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.3)',`data-card="${esc(r[0])}"`)}<div><a data-card="${esc(r[0])}"><b>${esc(r[2])}</b></a>${r[7]?`<div style="font-size:11px;color:#888" class="hide-m">Illus. ${esc(r[7])}</div>`:''}</div></div></td>
     <td class="hide-m nw">${sup==='Pokémon'? typeDot(ty)+esc(ty) : esc(sup)}${sub?`<div style="font-size:11px;color:#777">${esc(sub)}</div>`:''}</td>
     <td style="font-size:12px">${esc(T.rar[r[3]]||'—')}</td>
-    <td class="c" style="font-weight:700;${q?'':'color:#bbb'}">${q}</td>
+    <td class="c" style="font-weight:700;${q>=GOAL()?'color:#2e7d32':q?'color:#b7791f':'color:#bbb'}" title="${q>=2?'Regular and special done':q?'Regular done, special still needed':'Missing'}">${q}${q>=2?' ✓✓':q?' ✓':''}</td>
     ${LOCS.map(([k,n])=>{const v=e?(e[LI[k]]||0):0; return `<td class="c"><span class="qty qloc-${k} ${v?'':'zero'}" title="${n}"><button class="rw" data-l="${k}" data-q="-1" title="Remove one from ${n}">−</button><span>${v}</span><button class="rw" data-l="${k}" data-q="1" title="Add one to ${n}">+</button></span></td>`;}).join('')}</tr>`;
 }
 function renderSetRows(id){
   const rows=visibleRows(id); const tb=document.getElementById('setRows'); if(!tb) return;
   const g=document.getElementById('gallery');
   if(setLayout==='gallery'&&g){ g.innerHTML = rows.length? rows.map(r=>galleryHTML(id,r)).join('') : '<div style="padding:14px;color:#777;grid-column:1/-1;text-align:center">No cards match this filter.</div>'; return; }
-  tb.innerHTML = rows.length? rows.map(r=>rowHTML(id,r)).join('') : `<tr><td colspan="8" class="c" style="padding:14px;color:#777">No cards match this filter.</td></tr>`;
+  tb.innerHTML = rows.length? rows.map(r=>rowHTML(id,r)).join('') : `<tr><td colspan="7" class="c" style="padding:14px;color:#777">No cards match this filter.</td></tr>`;
 }
 function galleryHTML(id,r){
   const e=ownedOf(id)[r[0]], q=qn(e); const im=imgTag(id,'card',r[0],'width:100%;display:block');
@@ -705,7 +720,7 @@ function viewBinderBook(el,id){
     <span style="margin-left:10px">Pockets per card</span><div class="grp" id="bvCopies">${[1,2,3].map(n=>`<button class="seg ${+(b.copies??2)===n?'on':''}" data-n="${n}">${n}</button>`).join('')}</div>
     <span style="margin-left:auto;font-size:12.5px"><b>${filled}</b> of ${slots.length} pockets filled · ${sheets.length} page side${sheets.length===1?'':'s'} = <b>${both?Math.ceil(sheets.length/2):sheets.length}</b> sheet${(both?Math.ceil(sheets.length/2):sheets.length)===1?'':'s'}</span>
   </div>
-  <p style="font-size:12.5px;color:#555">Each card gets ${+(b.copies??2)} pocket${+(b.copies??2)>1?'s':''} (${slotNames(b).slice(0,+(b.copies??2)).join(', then ')})${b.secretSingle!==false?'; secret and extra cards get one':''}. A pocket is in colour when your ${b.colorBy==='owned'?'total count':'<span class="loc loc-binder">Binder</span> count'} for that card covers it: 1 fills the first pocket, 2 fills both. Click any pocket to change its count or how many pockets that card gets.</p>
+  <p style="font-size:12.5px;color:#555">Each card gets ${+(b.copies??2)} pocket${+(b.copies??2)>1?'s':''} (${slotNames(b).slice(0,+(b.copies??2)).join(', then ')})${b.secretSingle===true?'; secret and extra cards get one':'. Cards that only come in one version (full arts, secret rares and so on) get 2 copies'}. A pocket is in colour when your ${b.colorBy==='owned'?'total count':'<span class="loc loc-binder">Binder</span> count'} for that card covers it: 1 fills the first pocket, 2 fills both. Click any pocket to change its count or how many pockets that card gets.</p>
   <h2>Front label &amp; spine</h2>
   <div class="covers">
     <figure>${coverU?`<img src="${esc(coverU)}" style="max-height:300px;max-width:260px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.3)">`:`<canvas id="bvFront" class="preview" style="max-width:260px"></canvas>`}<figcaption>Front label${coverU?' (your picture)':''} · ${b.front==='printed'?'<span class="tag ok">printed</span>':b.front==='none'?'<span class="tag mute">not needed</span>':'<span class="tag warn">need to print</span>'}</figcaption></figure>
@@ -859,7 +874,7 @@ function mkBtn(txt,cls,fn){const b=document.createElement('button');b.className=
 
 function editBinder(id, presetSets){
   if(readOnly) return;
-  const isNew=!id; const b = isNew? {id:uid(), name:'', sets:presetSets||[], copies:2, secretSingle:true, pockets:9, sides:2, basis:'full', pagesHave:0, extraPages:0, capacity:0, haveBinder:false, front:'need', spine:'need', notes:'', label:{}} : JSON.parse(JSON.stringify(S.binders[id]));
+  const isNew=!id; const b = isNew? {id:uid(), name:'', sets:presetSets||[], copies:2, secretSingle:false, pockets:9, sides:2, basis:'full', pagesHave:0, extraPages:0, capacity:0, haveBinder:false, front:'need', spine:'need', notes:'', label:{}} : JSON.parse(JSON.stringify(S.binders[id]));
   if(isNew && b.sets.length===1) b.name=SETS[b.sets[0]].name;
   const sel=new Set(b.sets);
   const body=`<div class="form">
@@ -867,7 +882,7 @@ function editBinder(id, presetSets){
     <label>Expansions</label><div><input type="search" id="bSetQ" placeholder="Filter expansions" style="width:100%;margin-bottom:4px"><div class="setpick" id="bSets">${T.series.map(n=>`<div class="sr">${esc(n)}</div>`+SERIES_SETS[n].map(s=>`<label data-n="${esc(s.name.toLowerCase())}"><input type="checkbox" value="${s.id}" ${sel.has(s.id)?'checked':''}> ${esc(s.name)} <span style="color:#888">(${s.total})</span></label>`).join('')).join('')}</div></div>
     <label>Card page type</label><div><select id="bPockets">${[4,9,12,16].map(n=>`<option value="${n}" ${+b.pockets===n?'selected':''}>${n}-pocket</option>`).join('')}</select> <select id="bSides"><option value="2" ${(b.sides??2)==2?'selected':''}>both sides used</option><option value="1" ${b.sides==1?'selected':''}>front side only</option></select></div>
     <label>Pockets per card</label><div><select id="bCopies">${[1,2,3].map(n=>`<option value="${n}" ${+(b.copies??2)===n?'selected':''}>${n}${n===2?' (Regular + Holo)':n===1?' (one of each card)':''}</option>`).join('')}</select>
-      <label style="font-weight:400;margin-left:8px"><input type="checkbox" id="bSecret" ${b.secretSingle!==false?'checked':''}> secret &amp; extra cards get just 1</label></div>
+      <label style="font-weight:400;margin-left:8px"><input type="checkbox" id="bSecret" ${b.secretSingle===true?'checked':''}> secret &amp; extra cards get just 1</label></div>
     <label>Plan pages for</label><select id="bBasis"><option value="full" ${b.basis!=='owned'?'selected':''}>The full set (every pocket)</option><option value="owned" ${b.basis==='owned'?'selected':''}>Only the pockets I can fill</option></select>
     <label>Spare pages</label><input type="number" id="bExtra" min="0" value="${+b.extraPages||0}" style="width:80px">
     <label>Binder capacity</label><div><input type="number" id="bCap" min="0" value="${+b.capacity||0}" style="width:80px"> pages <span class="hint" style="display:inline">(0 = not sure)</span></div>
