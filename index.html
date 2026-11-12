@@ -535,7 +535,7 @@ function viewSet(el,id,soft){
   <div class="infobox" style="${styleVars(s.series)}">
     <div class="ttl">${esc(s.name)}<small>${esc(s.series)}</small></div>
     <div class="emb">${imgTag(id,'logo',null,'max-width:100%;max-height:120px')||`<div class="big">${esc(s.name)}</div>`}<div style="margin-top:6px">${s.code?`<span class="code" style="font-size:14px">${esc(s.code)}</span>`:''}</div>
-      <div class="rw" style="margin-top:8px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap"><button class="btn" data-up="logo" style="font-size:11.5px">${imgVal(id,'logo')?'Change':'Add'} logo</button><button class="btn" data-up="sym" style="font-size:11.5px">${imgVal(id,'sym')?'Change':'Add'} symbol</button>${imgVal(id,'logo')?'<button class="btn danger" data-rm="logo" style="font-size:11.5px" title="Remove logo">✕ logo</button>':''}${imgVal(id,'sym')?'<button class="btn danger" data-rm="sym" style="font-size:11.5px" title="Remove symbol">✕ symbol</button>':''}</div></div>
+      <div class="rw" style="margin-top:8px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap"><button class="btn" data-up="logo" style="font-size:11.5px">${imgVal(id,'logo')?'Change':officialOn()?'Use my own':'Add'} logo</button><button class="btn" data-up="sym" style="font-size:11.5px">${imgVal(id,'sym')?'Change':officialOn()?'Use my own':'Add'} symbol</button>${imgVal(id,'logo')?`<button class="btn danger" data-rm="logo" style="font-size:11.5px" title="Remove my logo">✕ ${officialOn()?'my ':''}logo</button>`:''}${imgVal(id,'sym')?`<button class="btn danger" data-rm="sym" style="font-size:11.5px" title="Remove my symbol">✕ ${officialOn()?'my ':''}symbol</button>`:''}</div></div>
     <table>
       <tr><th>Series</th><td>${esc(s.series)}</td></tr>
       ${s.no?`<tr><th>Set no.</th><td>${s.no}</td></tr>`:''}
@@ -696,7 +696,7 @@ function viewBinderBook(el,id){
   const pocketHTML=(x)=>{ if(!x) return '<div class="pocket empty"></div>';
     const has=slotHave(b,x); const u=imgURL(x.s.id,'card',x.r[0]); const ty=T.typ[x.r[6]];
     return `<div class="pocket ${has?'':'no'} v${x.v}" data-pk="${esc(x.s.id)}|${esc(x.r[0])}" title="${esc(x.r[2])} · ${esc(x.r[1])}${x.vname?' · '+esc(x.vname):''}${has?'':' (missing)'}">
-      ${u?`<img src="${esc(u)}" alt="" loading="lazy">`:`<div class="ph" style="${has&&ty?`background:${TYPE_COLORS[ty]}33`:''}"><span style="color:#888">${esc(x.r[1])}</span><b>${esc(x.r[2])}</b></div>`}
+      ${u?`<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:`<div class="ph" style="${has&&ty?`background:${TYPE_COLORS[ty]}33`:''}"><span style="color:#888">${esc(x.r[1])}</span><b>${esc(x.r[2])}</b></div>`}
       ${x.vname?`<div class="vt">${esc(x.vname)}</div>`:''}</div>`; };
   const coverU=imgURL(bpKey(b.id),'cover'), spineU=imgURL(bpKey(b.id),'spine');
   el.innerHTML=`<h1 class="ft">${esc(b.name)}: binder view</h1><div class="sub"><a data-go="shelf">My binders</a> · <a data-go="binders">Binder workshop</a></div>
@@ -727,7 +727,7 @@ function viewBinderBook(el,id){
 function pocketModal(b,setId,key){
   const s=SETS[setId]; const r=T.cards[setId].find(x=>x[0]===key); if(!r) return;
   const render=()=>{
-    const e=ownedOf(setId)[key]; const u=imgURL(setId,'card',key); const ov=(b.slotOv||{})[setId+'|'+key]; const n=cardSlotCount(b,setId,r);
+    const e=ownedOf(setId)[key]; const u=imgVal(setId,'card',key)? imgURL(setId,'card',key) : officialURL(setId,key,true); const ov=(b.slotOv||{})[setId+'|'+key]; const n=cardSlotCount(b,setId,r);
     const body=`<div style="display:flex;gap:16px;flex-wrap:wrap">
       <div style="flex:0 0 170px">${u?`<img src="${esc(u)}" style="width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.3)">`:`<div class="gph" style="margin:0"><div style="color:#999">${esc(r[1])}</div><b>${esc(r[2])}</b></div>`}</div>
       <div style="flex:1;min-width:220px">
@@ -965,7 +965,8 @@ function labelDialog(id,kind){
   if(!readOnly) foot.unshift(mkBtn('Mark as printed','',()=>{ read(); b[field]='printed'; saveBinder(b); closeModal(); toast('Marked as printed'); }));
   foot.push(mkBtn('⬇ Download PNG','pri',async()=>{
     read(); const c=document.createElement('canvas'); drawLabel(b,kind,c,1);
-    const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+    let blob; try{ blob=await new Promise((r,j)=>{ try{ c.toBlob(r,'image/png'); }catch(e){ j(e); } }); }
+    catch(e){ const keep=b.label.useLogo; b.label.useLogo=false; drawLabel(b,kind,c,1); b.label.useLogo=keep; blob=await new Promise(r=>c.toBlob(r,'image/png')); toast('The logo could not be added to the file, so the set name was used instead.'); }
     const name=`${(b.name||'binder').replace(/[^\w\- ]+/g,'').trim()||'binder'} - ${kind} label.png`;
     const d=window.__dl;
     if(!d){ // outside claude.ai (e.g. GitHub Pages): normal browser download
@@ -996,6 +997,8 @@ function viewOptions(el){
       <div id="wmsg" style="font-size:12px;color:#666"></div>
     </div>
   </div>
+  ${!(window.claude&&window.claude.use)?`<h2>Card pictures</h2>
+  <p><label><input type="checkbox" id="offpics" ${S.config.officialPics!==false?'checked':''} class="rw"> Show official card pictures automatically</label><br><span style="font-size:12.5px;color:#666">Pictures load from the public Pokémon TCG image library. Any picture you upload yourself is shown instead.</span></p>`:''}
   <h2>Site name</h2>
   <p class="rw"><input type="text" id="stitle" value="${esc(S.config.title||'My Collectapedia')}" style="width:280px"> <button class="btn" id="stsave">Save</button></p>
   <h2>Backup</h2>
@@ -1016,6 +1019,7 @@ function viewOptions(el){
   };
   const rs=el.querySelector('#wreset'); if(rs) rs.onclick=()=>{ delete S.config.wall; saveConfig(); route(true); };
   const sz=el.querySelector('#wsize'); if(sz){ sz.oninput=()=>{ document.getElementById('wsv').textContent=sz.value+'px'; document.documentElement.style.setProperty('--wall-size',sz.value+'px'); }; sz.onchange=()=>{ S.config.wall=Object.assign({},S.config.wall||{}, {size:+sz.value}); if(!S.config.wall.id&&!S.config.wall.data) S.config.wall={size:+sz.value}; saveConfig(); }; }
+  const op=el.querySelector('#offpics'); if(op) op.onchange=()=>{ S.config.officialPics=op.checked; saveConfig(); toast(op.checked?'Official pictures on':'Official pictures off'); };
   const wc=el.querySelector('#wcol'); if(wc) wc.onchange=()=>{ S.config.wallColor=wc.value; saveConfig(); };
   const wsc=el.querySelector('#wscroll'); if(wsc) wsc.onchange=()=>{ S.config.wallScroll=wsc.checked; saveConfig(); };
   el.querySelector('#stsave').onclick=()=>{ S.config.title=document.getElementById('stitle').value.trim()||'My Collectapedia'; saveConfig(); toast('Saved'); };
@@ -1038,10 +1042,25 @@ async function idbLoadAll(){ try{ const d=await idb(); await new Promise(res=>{ 
 function imgKey(setId,kind,cardKey){ return kind==='card'? `card:${setId}:${cardKey}` : `${kind}:${setId}`; }
 function imgVal(setId,kind,cardKey){ const m=S.images[setId]; if(!m) return null; return kind==='card'? (m.cards||{})[cardKey]||null : m[kind]||null; }
 function supaURL(path){ return supa? supa.storage.from('pictures').getPublicUrl(path).data.publicUrl : null; }
-function imgURL(setId,kind,cardKey){ const v=imgVal(setId,kind,cardKey); if(!v) return null; if(v.startsWith('a:')) return '/_blob/'+v.slice(2); if(v.startsWith('s:')) return supaURL(v.slice(2)); return IDBURL[imgKey(setId,kind,cardKey)]||null; }
-function imgTag(setId,kind,cardKey,style,extra){ const u=imgURL(setId,kind,cardKey); return u? `<img src="${esc(u)}" alt="" loading="lazy" style="${style||''}" ${extra||''}>` : ''; }
+// Official card pictures (pokemontcg.io / scrydex). Not available inside claude.ai, whose pages can't load outside images.
+const ROWMAP={};
+function cardRow(setId,key){ let m=ROWMAP[setId]; if(!m){ m=ROWMAP[setId]={}; (T.cards[setId]||[]).forEach(r=>m[r[0]]=r); } return m[key]; }
+function officialOn(){ return !(window.claude&&window.claude.use) && S.config.officialPics!==false; }
+function officialURL(setId,key,large){
+  if(!officialOn()) return null; const r=cardRow(setId,key); if(!r) return null;
+  const x=(T.imgx[setId]||{})[key];
+  if(x) return large? x.replace(/\/small$/,'/large').replace(/\.png$/,'_hires.png') : x;
+  if(T.imgpat[setId]==='x') return `https://images.scrydex.com/pokemon/${setId}-${encodeURIComponent(r[1])}/${large?'large':'small'}`;
+  return `https://images.pokemontcg.io/${setId}/${encodeURIComponent(r[1])}${large?'_hires':''}.png`;
+}
+function officialSetImg(setId,kind){
+  if(!officialOn()||!SETS[setId]) return null; const k=kind==='sym'?'symbol':'logo';
+  return T.imgpat[setId]==='x'? `https://images.scrydex.com/pokemon/${setId}-${k}/${k}` : `https://images.pokemontcg.io/${setId}/${k}.png`;
+}
+function imgURL(setId,kind,cardKey){ const v=imgVal(setId,kind,cardKey); if(!v) return kind==='card'? officialURL(setId,cardKey) : (kind==='sym'||kind==='logo')? officialSetImg(setId,kind) : null; if(v.startsWith('a:')) return '/_blob/'+v.slice(2); if(v.startsWith('s:')) return supaURL(v.slice(2)); return IDBURL[imgKey(setId,kind,cardKey)]||null; }
+function imgTag(setId,kind,cardKey,style,extra){ const u=imgURL(setId,kind,cardKey); return u? `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'" style="${style||''}" ${extra||''}>` : ''; }
 const LOGOIMG={};
-function logoFor(b,asImage){ const id=(b.sets||[]).find(x=>imgURL(x,'logo')); if(!id||(b.sets||[]).length!==1) return null; if(!asImage) return id; const u=imgURL(id,'logo'); if(!LOGOIMG[u]){ const im=new Image(); im.src=u; LOGOIMG[u]=im; } return LOGOIMG[u]; }
+function logoFor(b,asImage){ const id=(b.sets||[]).find(x=>imgURL(x,'logo')); if(!id||(b.sets||[]).length!==1) return null; if(!asImage) return id; const u=imgURL(id,'logo'); if(!LOGOIMG[u]){ const im=new Image(); if(/^https?:/.test(u)) im.crossOrigin='anonymous'; im.src=u; LOGOIMG[u]=im; } return LOGOIMG[u]; }
 function saveImages(setId){ if(mode==='local'){ lsSave(); return; } persist('images/'+setId, ()=>{ const m=S.images[setId]; return m&&(m.sym||m.logo||m.cover||m.spine||Object.keys(m.cards||{}).length)? m : null; }); }
 function pickFile(cb,multiple){ const i=document.createElement('input'); i.type='file'; i.accept='image/*'; if(multiple) i.multiple=true; i.onchange=()=>{ if(i.files.length) cb(multiple?[...i.files]:i.files[0]); }; i.click(); }
 function resizeImage(file,maxW,maxH){ return new Promise((res)=>{ const img=new Image(); img.onload=()=>{ const r=Math.min(1,maxW/img.width,maxH/img.height); if(r>=1 && file.size<400000){ URL.revokeObjectURL(img.src); res(file); return; } const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); c.toBlob(b=>res(b||file),'image/webp',0.86); }; img.onerror=()=>res(file); img.src=URL.createObjectURL(file); }); }
@@ -1104,11 +1123,11 @@ async function bulkUploadCards(setId,files){
 function cardModal(setId,key){
   const s=SETS[setId]; const cards=visibleRows(setId); let idx=cards.findIndex(r=>r[0]===key); if(idx<0){ idx=0; }
   const r=T.cards[setId].find(x=>x[0]===key); if(!r) return;
-  const e=ownedOf(setId)[key]; const u=imgURL(setId,'card',key);
+  const e=ownedOf(setId)[key]; const own=imgVal(setId,'card',key); const u=own? imgURL(setId,'card',key) : officialURL(setId,key,true);
   const ty=T.typ[r[6]]||'', sup=T.sup[r[4]]||'', sub=T.sub[r[5]]||'';
   const body=`<div style="display:flex;gap:18px;flex-wrap:wrap">
     <div style="flex:0 0 240px;max-width:100%">${u?`<img src="${esc(u)}" style="width:100%;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.3)">`:`<div class="gph" style="margin:0;height:auto"><div style="color:#999">No picture yet</div></div>`}
-      <div class="rw" style="margin-top:8px;display:flex;gap:6px;justify-content:center"><button class="btn pri" id="cmUp">${u?'Change picture':'Add picture'}</button>${u?'<button class="btn danger" id="cmRm">Remove</button>':''}</div></div>
+      <div class="rw" style="margin-top:8px;display:flex;gap:6px;justify-content:center"><button class="btn pri" id="cmUp">${own?'Change picture':u?'Use my own picture':'Add picture'}</button>${own?`<button class="btn danger" id="cmRm">${officialOn()?'Back to official':'Remove'}</button>`:''}</div></div>
     <div style="flex:1;min-width:220px">
       <div class="infobox" style="${styleVars(s.series)};float:none;width:auto;margin:0"><div class="ttl">${esc(r[2])}<small>${esc(s.name)} · ${esc(r[1])}${isMainNum(r[1],s.printed)?'/'+s.printed:''}</small></div>
       <table><tr><th>Card type</th><td>${esc(sup)}${sub?' · '+esc(sub):''}</td></tr>${ty?`<tr><th>Type</th><td>${typeDot(ty)}${esc(ty)}</td></tr>`:''}
