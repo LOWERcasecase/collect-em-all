@@ -55,6 +55,24 @@ button{font:inherit}
 .gcap{display:flex;justify-content:space-between;gap:4px;font-size:11.5px;padding:4px 6px;background:#fff;border-top:1px solid #eee}
 .gcap span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gq{color:#2e7d32}
+.book{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:18px;margin-top:8px}
+.sheet{background:#f4f1ea;border:1px solid #cfc8b8;border-radius:6px;padding:8px 8px 10px;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+.sheet h4{margin:0 0 6px;font-size:13px;display:flex;justify-content:space-between;color:#333}
+.sheet h4 span{font-weight:400;color:#777;font-size:11.5px}
+.pockets{display:grid;gap:5px}
+.pocket{aspect-ratio:63/88;border-radius:4px;background:rgba(255,255,255,.65);border:1px solid #d9d3c4;position:relative;overflow:hidden;cursor:pointer}
+.pocket.empty{background:repeating-linear-gradient(45deg,#ece8de,#ece8de 6px,#e6e1d5 6px,#e6e1d5 12px);cursor:default}
+.pocket img{width:100%;height:100%;object-fit:cover;display:block}
+.pocket .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:3px;font-size:10px;line-height:1.2}
+.pocket .ph b{font-size:10.5px}
+.pocket .vt{position:absolute;left:0;right:0;bottom:0;font-size:9px;font-weight:700;text-align:center;padding:1px 2px;background:rgba(0,0,0,.55);color:#fff;letter-spacing:.2px}
+.pocket.v1 .vt{background:linear-gradient(90deg,#8e6fd8,#4fb3d9,#7fd08a)}
+.pocket.no{filter:grayscale(1);opacity:.55}
+.pocket.no .ph{color:#666}
+.pocket:not(.no):not(.empty){box-shadow:0 0 0 2px #2e8b3b}
+.covers{display:flex;gap:22px;align-items:flex-end;flex-wrap:wrap;margin:6px 0 14px}
+.covers figure{margin:0;text-align:center}
+.covers figcaption{font-size:12px;color:#555;margin-top:4px;font-weight:600}
 .shelf-sets{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
 details.cards>summary{cursor:pointer;font-weight:600;color:var(--link);margin:6px 0}
 #content{flex:1;min-width:0;background:#fff;border:1px solid var(--border);border-radius:0 12px 12px 12px;padding:18px 26px 30px;box-shadow:0 2px 12px rgba(0,0,0,.18)}
@@ -206,6 +224,7 @@ canvas.preview{max-width:100%;border:1px solid #ccc;border-radius:4px;background
 <div id="modal"><div class="dlg"><div class="dh"><span id="mTitle"></span><a id="mClose">✕</a></div><div class="db" id="mBody"></div><div class="df" id="mFoot"></div></div></div>
 <div id="toast"></div>
 <script src="data.js"></script>
+<script src="supabase-config.js" onerror="void 0"></script>
 <script>
 (function(){
 "use strict";
@@ -260,23 +279,30 @@ function queueWrite(key, fn){
   timers[key]=setTimeout(()=>flush(key,fn),500);
 }
 async function flush(key, fn){
-  if(mode!=='db'){ lsSave(); dirty[key]=false; return; }
+  if(mode==='local'){ lsSave(); dirty[key]=false; return; }
   if(writing[key]){ timers[key]=setTimeout(()=>flush(key,fn),300); return; }
   writing[key]=true;
   try{ await fn(); }
   catch(e){
-    if(e && e.code==='invalid_argument'){ setReadOnly(true); toast('This page is read-only for you.'); }
+    if(e && e.code==='invalid_argument'){ setReadOnly(true); toast(mode==='supa'?'Not saved: you are not signed in as the owner.':'This page is read-only for you.'); }
     else if(e && e.code==='quota_exceeded'){ toast('Storage is full: '+(e.message||'')); }
     else { try{ await new Promise(r=>setTimeout(r,800+Math.random()*600)); await fn(); }catch(e2){ toast('Could not save. Check your connection.'); } }
   }
   writing[key]=false; dirty[key]=false;
 }
-function saveSet(setId){
-  queueWrite('owned/'+setId, ()=>{ const c=S.owned[setId]||{}; return Object.keys(c).length? db.collection('owned').doc(setId).set({c}) : db.collection('owned').doc(setId).delete(); });
+// path = 'owned/<set>' | 'binders/<id>' | 'images/<set>' | 'config/main'; getData() returns the body, or null to delete
+function persist(path,getData){ queueWrite(path, ()=>backendWrite(path,getData())); }
+async function backendWrite(path,data){
+  if(mode==='db'){ const ref=db.doc(path); return data? ref.set(data) : ref.delete(); }
+  if(mode==='supa'){
+    const q = data? supa.from('kv').upsert({path,data,updated_at:new Date().toISOString()}) : supa.from('kv').delete().eq('path',path);
+    const {error}=await q; if(error){ const e=new Error(error.message); e.code=(error.code==='42501'||/row-level security|permission/i.test(error.message))?'invalid_argument':'unavailable'; throw e; }
+  }
 }
-function saveBinder(b){ S.binders[b.id]=b; queueWrite('binders/'+b.id, ()=>db.collection('binders').doc(b.id).set(b)); }
-function deleteBinder(id){ delete S.binders[id]; queueWrite('binders/'+id, ()=>db.collection('binders').doc(id).delete()); }
-function saveConfig(){ queueWrite('config/main', ()=>db.doc('config/main').set(S.config)); applyConfig(); }
+function saveSet(setId){ persist('owned/'+setId, ()=>{ const c=S.owned[setId]||{}; return Object.keys(c).length? {c} : null; }); }
+function saveBinder(b){ S.binders[b.id]=b; persist('binders/'+b.id, ()=>S.binders[b.id]||null); }
+function deleteBinder(id){ delete S.binders[id]; persist('binders/'+id, ()=>null); }
+function saveConfig(){ persist('config/main', ()=>S.config); applyConfig(); }
 
 function setReadOnly(v){ readOnly=v; document.body.classList.toggle('ro',v); }
 function banner(cls,html){const b=document.getElementById('banner');b.className='show '+cls;b.innerHTML=html;}
@@ -285,7 +311,10 @@ let rerenderPending=false;
 function softRerender(){ if(rerenderPending) return; rerenderPending=true; requestAnimationFrame(()=>{rerenderPending=false; if(!document.getElementById('modal').classList.contains('show')) route(true);}); }
 
 async function initStorage(){
-  lsLoad(); applyConfig(); route();
+  lsLoad(); applyConfig();
+  const SC=window.SUPABASE_CONFIG;
+  if(SC && SC.url && SC.key && !/YOUR/i.test(SC.url+SC.key)){ return initSupa(SC); }
+  route();
   if(!(window.claude && window.claude.use)){ banner('info','Your collection is being saved in this browser only.'); return; }
   try{ db = await window.claude.use('db'); }catch(e){ db=null; }
   try{ user = await window.claude.use('user'); }catch(e){ user=null; }
@@ -347,11 +376,21 @@ function setStats(setId){
 }
 function isMainNum(num,printed){const n=parseInt(num,10); return /^\d+$/.test(num) && n>=1 && n<=printed;}
 function bindersForSet(setId){return Object.values(S.binders).filter(b=>(b.sets||[]).includes(setId));}
+// One entry per pocket: each card gets b.copies pockets (default 2: Regular + Holo); secret/extra cards 1 unless turned off; per-card overrides in b.slotOv
+function slotNames(b){ const n=(b.slotNames&&b.slotNames.length)? b.slotNames : ['Regular','Holo','Extra']; return n; }
+function cardSlotCount(b,setId,r){ const ov=(b.slotOv||{})[setId+'|'+r[0]]; if(ov!=null) return ov; const c=+(b.copies??2); if(!isMainNum(r[1],SETS[setId].printed) && b.secretSingle!==false) return Math.min(1,c); return c; }
+function binderSlots(b){
+  const out=[]; const names=slotNames(b);
+  (b.sets||[]).filter(id=>SETS[id]).forEach(id=>{ const s=SETS[id]; T.cards[id].forEach(r=>{ const n=cardSlotCount(b,id,r); for(let v=0;v<n;v++) out.push({s,r,v,n,vname: n>1? (names[v]||('Copy '+(v+1))) : (isMainNum(r[1],s.printed)? '' : 'Holo')}); }); });
+  return out;
+}
+function slotHave(b,x){ const e=ownedOf(x.s.id)[x.r[0]]; const c = b.colorBy==='owned'? qn(e) : (e?e[0]:0); return x.v < c; }
 function binderCalc(b){
   const per=(+b.pockets||9)*((b.sides??2)==2?2:1);
   const sets=(b.sets||[]).filter(id=>SETS[id]);
-  let full=0, owned=0, inBinder=0;
-  sets.forEach(id=>{ full+=SETS[id].total; const st=setStats(id); owned+=st.have; inBinder+=st.byLoc.binder||0; });
+  let inBinder=0;
+  sets.forEach(id=>{ const st=setStats(id); inBinder+=st.byLoc.binder||0; });
+  const slots=binderSlots(b); const full=slots.length; const owned=slots.filter(x=>slotHave(b,x)).length;
   const basis = b.basis==='owned'? owned : full;
   const need = Math.ceil(basis/per) + (+b.extraPages||0);
   const have = +b.pagesHave||0;
@@ -369,7 +408,7 @@ function binderStatus(b){
 
 /* ================= CONFIG / WALLPAPER ================= */
 const DEFAULT_WALL = 'data:image/svg+xml,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><rect width="120" height="120" fill="#6aa86a"/><g fill="none" stroke="#8cc28c" stroke-width="3"><circle cx="30" cy="30" r="14"/><circle cx="90" cy="90" r="14"/></g><g fill="#5c9a5c"><path d="M90 18l4 8 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z"/><path d="M30 78l4 8 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z"/></g></svg>`);
-function wallURL(){ const w=S.config.wall; if(w&&w.id) return '/_blob/'+w.id; if(w&&w.data) return w.data; return DEFAULT_WALL; }
+function wallURL(){ const w=S.config.wall; if(w&&w.s&&supa) return supaURL(w.s); if(w&&w.id) return '/_blob/'+w.id; if(w&&w.data) return w.data; return DEFAULT_WALL; }
 function applyConfig(){
   const st=document.body.style;
   st.backgroundImage=`url("${wallURL()}")`;
@@ -382,11 +421,12 @@ function applyConfig(){
 
 /* ================= ROUTER ================= */
 let curView='home', curArg='';
-const views={shelf:viewShelf,home:viewHome,expansions:viewExpansions,binders:viewBinders,find:viewFind,options:viewOptions,set:viewSet,search:viewSearch};
+const views={bview:viewBinderBook,shelf:viewShelf,home:viewHome,expansions:viewExpansions,binders:viewBinders,find:viewFind,options:viewOptions,set:viewSet,search:viewSearch};
 function go(name){ if(location.hash==='#'+name) route(); else location.hash=name; }
 function parseHash(){
   const h=(location.hash||'').slice(1);
   if(h.startsWith('set-')) return ['set',h.slice(4)];
+  if(h.startsWith('view-')) return ['bview',h.slice(5)];
   if(views[h]) return [h,''];
   return ['home',''];
 }
@@ -395,7 +435,7 @@ function route(soft){
   const [v,arg]=parseHash();
   const keepScroll = soft && v===curView && arg===curArg ? window.scrollY : null;
   curView=v; curArg=arg;
-  document.querySelectorAll('#tabs a').forEach(a=>a.classList.toggle('sel',a.dataset.go===v || (v==='set'&&a.dataset.go==='expansions')));
+  document.querySelectorAll('#tabs a').forEach(a=>a.classList.toggle('sel',a.dataset.go===v || (v==='set'&&a.dataset.go==='expansions') || (v==='bview'&&a.dataset.go==='shelf')));
   const el=document.getElementById('view');
   views[v](el,arg,soft);
   renderSide();
@@ -424,7 +464,7 @@ function renderSide(){
   document.getElementById('sideCount').innerHTML=countHTML(totals());
   document.getElementById('sideSeries').innerHTML=T.series.map((n,i)=>`<li><a data-scroll="ser${i}">${esc(n.replace(' Series',''))}</a></li>`).join('');
   const bs=Object.values(S.binders).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  document.getElementById('sideBinders').innerHTML = bs.length? bs.map(b=>{const st=binderStatus(b);return `<li><a data-binder="${b.id}">${esc(b.name||'Untitled')}</a> ${st.ready?'<span title="Ready">✅</span>':''}</li>`;}).join('') : '<li style="color:#777">None yet</li>';
+  document.getElementById('sideBinders').innerHTML = bs.length? bs.map(b=>{const st=binderStatus(b);return `<li><a data-go="view-${b.id}">${esc(b.name||'Untitled')}</a> ${st.ready?'<span title="Ready">✅</span>':''}</li>`;}).join('') : '<li style="color:#777">None yet</li>';
 }
 
 /* ================= VIEWS ================= */
@@ -645,6 +685,66 @@ function viewFind(el){
   run();
 }
 
+/* ---------- Binder view (book) ---------- */
+function viewBinderBook(el,id){
+  const b=S.binders[id];
+  if(!b){ el.innerHTML='<h1 class="ft">Binder not found</h1><p><a data-go="shelf">Back to My binders</a></p>'; return; }
+  const slots=binderSlots(b); const pockets=+b.pockets||9; const cols=pockets===4?2:pockets===12||pockets===16?4:3;
+  const both=(b.sides??2)==2; const c=binderCalc(b); const first=SETS[(b.sets||[])[0]]; const ser=first?first.series:'Promos & Other';
+  const filled=slots.filter(x=>slotHave(b,x)).length;
+  const sheets=[]; for(let i=0;i<slots.length;i+=pockets) sheets.push(slots.slice(i,i+pockets));
+  const pocketHTML=(x)=>{ if(!x) return '<div class="pocket empty"></div>';
+    const has=slotHave(b,x); const u=imgURL(x.s.id,'card',x.r[0]); const ty=T.typ[x.r[6]];
+    return `<div class="pocket ${has?'':'no'} v${x.v}" data-pk="${esc(x.s.id)}|${esc(x.r[0])}" title="${esc(x.r[2])} · ${esc(x.r[1])}${x.vname?' · '+esc(x.vname):''}${has?'':' (missing)'}">
+      ${u?`<img src="${esc(u)}" alt="" loading="lazy">`:`<div class="ph" style="${has&&ty?`background:${TYPE_COLORS[ty]}33`:''}"><span style="color:#888">${esc(x.r[1])}</span><b>${esc(x.r[2])}</b></div>`}
+      ${x.vname?`<div class="vt">${esc(x.vname)}</div>`:''}</div>`; };
+  const coverU=imgURL(bpKey(b.id),'cover'), spineU=imgURL(bpKey(b.id),'spine');
+  el.innerHTML=`<h1 class="ft">${esc(b.name)}: binder view</h1><div class="sub"><a data-go="shelf">My binders</a> · <a data-go="binders">Binder workshop</a></div>
+  <div class="toolbar">
+    <span>Colour cards that are</span><div class="grp" id="bvColor"><button class="seg ${b.colorBy!=='owned'?'on':''}" data-c="binder">In the binder</button><button class="seg ${b.colorBy==='owned'?'on':''}" data-c="owned">Owned anywhere</button></div>
+    <span style="margin-left:10px">Pockets per card</span><div class="grp" id="bvCopies">${[1,2,3].map(n=>`<button class="seg ${+(b.copies??2)===n?'on':''}" data-n="${n}">${n}</button>`).join('')}</div>
+    <span style="margin-left:auto;font-size:12.5px"><b>${filled}</b> of ${slots.length} pockets filled · ${sheets.length} page side${sheets.length===1?'':'s'} = <b>${both?Math.ceil(sheets.length/2):sheets.length}</b> sheet${(both?Math.ceil(sheets.length/2):sheets.length)===1?'':'s'}</span>
+  </div>
+  <p style="font-size:12.5px;color:#555">Each card gets ${+(b.copies??2)} pocket${+(b.copies??2)>1?'s':''} (${slotNames(b).slice(0,+(b.copies??2)).join(', then ')})${b.secretSingle!==false?'; secret and extra cards get one':''}. A pocket is in colour when your ${b.colorBy==='owned'?'total count':'<span class="loc loc-binder">Binder</span> count'} for that card covers it: 1 fills the first pocket, 2 fills both. Click any pocket to change its count or how many pockets that card gets.</p>
+  <h2>Front label &amp; spine</h2>
+  <div class="covers">
+    <figure>${coverU?`<img src="${esc(coverU)}" style="max-height:300px;max-width:260px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.3)">`:`<canvas id="bvFront" class="preview" style="max-width:260px"></canvas>`}<figcaption>Front label${coverU?' (your picture)':''} · ${b.front==='printed'?'<span class="tag ok">printed</span>':b.front==='none'?'<span class="tag mute">not needed</span>':'<span class="tag warn">need to print</span>'}</figcaption></figure>
+    <figure>${spineU?`<img src="${esc(spineU)}" style="max-height:300px;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.3)">`:`<canvas id="bvSpine" class="preview" style="max-height:300px"></canvas>`}<figcaption>Spine label${spineU?' (your picture)':''} · ${b.spine==='printed'?'<span class="tag ok">printed</span>':b.spine==='none'?'<span class="tag mute">not needed</span>':'<span class="tag warn">need to print</span>'}</figcaption></figure>
+    <div style="font-size:12.5px;color:#555;max-width:280px">${c.sets.map(id=>`<div><a data-set="${id}">${esc(SETS[id].name)}</a> <span class="code">${esc(SETS[id].code)}</span></div>`).join('')}<div style="margin-top:6px">${c.have} of ${c.need} sheets on hand${c.short?` · <span style="color:var(--warn)">need ${c.short} more</span>`:''}</div></div>
+  </div>
+  <h2>Pages</h2>
+  ${slots.length? `<div class="book">${sheets.map((sh,i)=>{ const pg=both?Math.floor(i/2)+1:i+1; const side=both?(i%2?'back':'front'):''; const a=sh[0], z=sh[sh.length-1];
+    const cells=[]; for(let k=0;k<pockets;k++) cells.push(pocketHTML(sh[k]));
+    return `<div class="sheet"><h4>Page ${pg}${side?' · '+side:''}<span>${esc(a.r[1])} – ${esc(z.r[1])}${c.sets.length>1&&a.s!==z.s?'':''}</span></h4><div class="pockets" style="grid-template-columns:repeat(${cols},1fr)">${cells.join('')}</div></div>`; }).join('')}</div>`
+   : '<p>This binder has no expansions yet. <a data-go="binders">Add some in the workshop</a>.</p>'}`;
+  const fc=document.getElementById('bvFront'); if(fc){ drawLabel(b,'front',fc,0.3); const lg=logoFor(b,true); if(lg&&!lg.complete) lg.addEventListener('load',()=>drawLabel(b,'front',fc,0.3),{once:true}); }
+  const sc_=document.getElementById('bvSpine'); if(sc_){ const L=labelDefaults(b); drawLabel(b,'spine',sc_,300/(L.sh*DPI)*2); }
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ if(fc&&fc.isConnected) drawLabel(b,'front',fc,0.3); if(sc_&&sc_.isConnected){ const L=labelDefaults(b); drawLabel(b,'spine',sc_,300/(L.sh*DPI)*2);} });
+  el.querySelector('#bvColor').onclick=e=>{ const t=e.target.closest('[data-c]'); if(!t||readOnly) return; b.colorBy=t.dataset.c; saveBinder(b); route(true); };
+  el.querySelector('#bvCopies').onclick=e=>{ const t=e.target.closest('[data-n]'); if(!t||readOnly) return; b.copies=+t.dataset.n; saveBinder(b); route(true); };
+  el.querySelectorAll('.pocket[data-pk]').forEach(pk=>pk.onclick=()=>{ const [sid,key]=pk.dataset.pk.split('|'); pocketModal(b,sid,key); });
+}
+function pocketModal(b,setId,key){
+  const s=SETS[setId]; const r=T.cards[setId].find(x=>x[0]===key); if(!r) return;
+  const render=()=>{
+    const e=ownedOf(setId)[key]; const u=imgURL(setId,'card',key); const ov=(b.slotOv||{})[setId+'|'+key]; const n=cardSlotCount(b,setId,r);
+    const body=`<div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div style="flex:0 0 170px">${u?`<img src="${esc(u)}" style="width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.3)">`:`<div class="gph" style="margin:0"><div style="color:#999">${esc(r[1])}</div><b>${esc(r[2])}</b></div>`}</div>
+      <div style="flex:1;min-width:220px">
+        <div style="font-size:16px;font-weight:700">${esc(r[2])}</div><div style="color:#666;font-size:12.5px;margin-bottom:10px">${esc(s.name)} · ${esc(r[1])} · ${esc(T.rar[r[3]]||'')}</div>
+        <div style="font-weight:600;margin-bottom:4px">My copies</div>
+        <table style="border-spacing:0 4px">${LOCS.map(([k,nm])=>{const v=e?(e[LI[k]]||0):0; return `<tr><td style="padding-right:10px"><span class="loc loc-${k}">${nm}</span></td><td><span class="qty qloc-${k} ${v?'':'zero'}"><button class="rw" data-pl="${k}" data-pq="-1">−</button><span>${v}</span><button class="rw" data-pl="${k}" data-pq="1">+</button></span></td></tr>`;}).join('')}</table>
+        <div style="font-weight:600;margin:12px 0 4px">Pockets for this card in “${esc(b.name)}”</div>
+        <div class="grp rw" style="display:flex">${[['auto','Default'],[0,'0'],[1,'1'],[2,'2'],[3,'3']].map(([k,nm])=>`<button class="seg ${(k==='auto'?ov==null:ov===k)?'on':''}" data-ov="${k}">${nm}</button>`).join('')}</div>
+        <div style="font-size:11.5px;color:#666;margin-top:4px">Currently ${n} pocket${n===1?'':'s'}. Use 1 if this card only comes in one version, or 0 to leave it out.</div>
+      </div></div>`;
+    openModal('Pocket · '+r[2], body, [mkBtn('Open expansion','',()=>{ document.getElementById('modal').classList.remove('show'); go('set-'+setId); }), mkBtn('Done','pri',closeModal)]);
+    document.querySelectorAll('#mBody [data-pq]').forEach(x=>x.onclick=()=>{ if(readOnly) return; changeQty(setId,key,x.dataset.pl,+x.dataset.pq); render(); });
+    document.querySelectorAll('#mBody [data-ov]').forEach(x=>x.onclick=()=>{ if(readOnly) return; b.slotOv=b.slotOv||{}; const k=setId+'|'+key; if(x.dataset.ov==='auto') delete b.slotOv[k]; else b.slotOv[k]=+x.dataset.ov; saveBinder(b); render(); });
+  };
+  render();
+}
+
 /* ---------- My binders (shelf) ---------- */
 let shelfShow={};
 function viewShelf(el){
@@ -671,7 +771,7 @@ function shelfBinderHTML(b){
   const copies=bc.inb.reduce((n,x)=>n+x.e[0],0);
   const seg=(k,n,c)=>`<button class="seg ${m===k?'on':''}" data-shelfmode="${k}" data-b="${b.id}">${n} (${c})</button>`;
   return `<div class="binder" id="bin-${b.id}" style="${styleVars(ser)};margin-top:18px">
-    <div class="bh"><b>${esc(b.name)}</b>${b.haveBinder?'<span class="tag ok">On the shelf</span>':'<span class="tag warn">Need to buy</span>'}<a class="btn" data-go="binders" style="text-shadow:none">Workshop</a></div>
+    <div class="bh"><b>${esc(b.name)}</b>${b.haveBinder?'<span class="tag ok">On the shelf</span>':'<span class="tag warn">Need to buy</span>'}<a class="btn" data-go="view-${b.id}" style="text-shadow:none">📖 Binder view</a><a class="btn" data-go="binders" style="text-shadow:none">Workshop</a></div>
     <div style="background:#fff;border-radius:9px;padding:10px 12px">
       ${(imgURL(bpKey(b.id),'cover')||imgURL(bpKey(b.id),'spine'))? `<div style="float:right;margin:0 0 8px 12px">${binderPics(b,false)}</div>`:''}
       <div class="shelf-sets">${st.c.sets.map(id=>{const s=SETS[id]; const n=bc.inb.filter(x=>x.s.id===id).length; return `<span style="border:1px solid #ddd;border-radius:8px;padding:3px 8px;font-size:12.5px"><a data-set="${id}">${esc(s.name)}</a> <span class="code">${esc(s.code)}</span> · ${n}/${s.total}</span>`;}).join('') || '<i>No expansions chosen.</i>'}</div>
@@ -685,9 +785,9 @@ function shelfBinderHTML(b){
 }
 // Where a card sits in the binder if the set is filed in number order (full-set layout)
 function slotOf(b,x){
-  const per=(+b.pockets||9)*((b.sides??2)==2?2:1); const pockets=+b.pockets||9; let idx=0;
-  for(const id of (b.sets||[])){ if(!SETS[id]) continue; if(id===x.s.id){ idx+=T.cards[id].indexOf(x.r); break; } idx+=T.cards[id].length; }
+  const per=(+b.pockets||9)*((b.sides??2)==2?2:1); const pockets=+b.pockets||9;
   if(b.basis==='owned') return '—';
+  const idx=binderSlots(b).findIndex(y=>y.s.id===x.s.id&&y.r[0]===x.r[0]); if(idx<0) return 'not in binder';
   const page=Math.floor(idx/per)+1, side=(b.sides??2)==2? (Math.floor((idx%per)/pockets)===0?'front':'back') : '', slot=(idx%pockets)+1;
   return `p.${page}${side?' '+side:''} #${slot}`;
 }
@@ -724,7 +824,7 @@ function binderHTML(b,st){
   const tick=(ok,na)=>`<span class="tick ${na?'x':ok?'y':'n'}">${na?'–':ok?'✓':'!'}</span>`;
   return `<div class="binder" style="${styleVars(ser)}">
     <div class="bh"><b>${esc(b.name||'Untitled binder')}</b>${st.ready?'<span class="tag ok">Ready to build</span>':`<span class="tag warn">${st.todo.length} to do</span>`}
-      <button class="btn rw" data-bedit="${b.id}">Edit</button></div>
+      <a class="btn" data-go="view-${b.id}" style="text-shadow:none">📖 Binder view</a><button class="btn rw" data-bedit="${b.id}">Edit</button></div>
     <div class="bb">
       <div>
         <div style="font-weight:700;margin-bottom:4px">Checklist</div>
@@ -759,14 +859,16 @@ function mkBtn(txt,cls,fn){const b=document.createElement('button');b.className=
 
 function editBinder(id, presetSets){
   if(readOnly) return;
-  const isNew=!id; const b = isNew? {id:uid(), name:'', sets:presetSets||[], pockets:9, sides:2, basis:'full', pagesHave:0, extraPages:0, capacity:0, haveBinder:false, front:'need', spine:'need', notes:'', label:{}} : JSON.parse(JSON.stringify(S.binders[id]));
+  const isNew=!id; const b = isNew? {id:uid(), name:'', sets:presetSets||[], copies:2, secretSingle:true, pockets:9, sides:2, basis:'full', pagesHave:0, extraPages:0, capacity:0, haveBinder:false, front:'need', spine:'need', notes:'', label:{}} : JSON.parse(JSON.stringify(S.binders[id]));
   if(isNew && b.sets.length===1) b.name=SETS[b.sets[0]].name;
   const sel=new Set(b.sets);
   const body=`<div class="form">
     <label>Binder name</label><input type="text" id="bName" value="${esc(b.name)}" placeholder="e.g. Scarlet & Violet 151">
     <label>Expansions</label><div><input type="search" id="bSetQ" placeholder="Filter expansions" style="width:100%;margin-bottom:4px"><div class="setpick" id="bSets">${T.series.map(n=>`<div class="sr">${esc(n)}</div>`+SERIES_SETS[n].map(s=>`<label data-n="${esc(s.name.toLowerCase())}"><input type="checkbox" value="${s.id}" ${sel.has(s.id)?'checked':''}> ${esc(s.name)} <span style="color:#888">(${s.total})</span></label>`).join('')).join('')}</div></div>
     <label>Card page type</label><div><select id="bPockets">${[4,9,12,16].map(n=>`<option value="${n}" ${+b.pockets===n?'selected':''}>${n}-pocket</option>`).join('')}</select> <select id="bSides"><option value="2" ${(b.sides??2)==2?'selected':''}>both sides used</option><option value="1" ${b.sides==1?'selected':''}>front side only</option></select></div>
-    <label>Plan pages for</label><select id="bBasis"><option value="full" ${b.basis!=='owned'?'selected':''}>The full set (all cards)</option><option value="owned" ${b.basis==='owned'?'selected':''}>Only cards I own</option></select>
+    <label>Pockets per card</label><div><select id="bCopies">${[1,2,3].map(n=>`<option value="${n}" ${+(b.copies??2)===n?'selected':''}>${n}${n===2?' (Regular + Holo)':n===1?' (one of each card)':''}</option>`).join('')}</select>
+      <label style="font-weight:400;margin-left:8px"><input type="checkbox" id="bSecret" ${b.secretSingle!==false?'checked':''}> secret &amp; extra cards get just 1</label></div>
+    <label>Plan pages for</label><select id="bBasis"><option value="full" ${b.basis!=='owned'?'selected':''}>The full set (every pocket)</option><option value="owned" ${b.basis==='owned'?'selected':''}>Only the pockets I can fill</option></select>
     <label>Spare pages</label><input type="number" id="bExtra" min="0" value="${+b.extraPages||0}" style="width:80px">
     <label>Binder capacity</label><div><input type="number" id="bCap" min="0" value="${+b.capacity||0}" style="width:80px"> pages <span class="hint" style="display:inline">(0 = not sure)</span></div>
     <label>I have the binder</label><input type="checkbox" id="bHave" ${b.haveBinder?'checked':''} style="justify-self:start">
@@ -778,14 +880,14 @@ function editBinder(id, presetSets){
   </div>`;
   const read=()=>{ const g=x=>document.getElementById(x);
     b.name=g('bName').value.trim(); b.sets=[...g('bSets').querySelectorAll('input:checked')].map(x=>x.value).sort((x,y)=>SETS[x].release.localeCompare(SETS[y].release));
-    b.pockets=+g('bPockets').value; b.sides=+g('bSides').value; b.basis=g('bBasis').value; b.extraPages=+g('bExtra').value||0; b.capacity=+g('bCap').value||0;
+    b.copies=+g('bCopies').value; b.secretSingle=g('bSecret').checked; b.pockets=+g('bPockets').value; b.sides=+g('bSides').value; b.basis=g('bBasis').value; b.extraPages=+g('bExtra').value||0; b.capacity=+g('bCap').value||0;
     b.haveBinder=g('bHave').checked; b.pagesHave=+g('bPages').value||0; b.front=g('bFront').value; b.spine=g('bSpine').value; b.notes=g('bNotes').value; };
   const foot=[];
   if(!isNew) foot.push(mkBtn('Delete binder','danger',()=>{ if(!confirmInline('Delete this binder?')) return; ['cover','spine'].forEach(k=>removeImage(bpKey(b.id),k,null)); deleteBinder(b.id); closeModal(); toast('Binder deleted'); }));
   foot.push(mkBtn('Cancel','',closeModal));
   foot.push(mkBtn(isNew?'Create binder':'Save','pri',()=>{ read(); if(!b.name) b.name = b.sets.length? SETS[b.sets[0]].name : 'New binder'; saveBinder(b); closeModal(); toast('Binder saved'); }));
   openModal(isNew?'New binder':'Edit binder', body, foot);
-  const calc=()=>{ read(); const c=binderCalc(b); document.getElementById('bCalc').innerHTML = c.sets.length? `This binder needs <b>${c.need}</b> pages (${c.basis} cards ÷ ${c.per} per page${b.extraPages?` + ${b.extraPages} spare`:''}). ${c.short?`You need <b>${c.short}</b> more.`:'You have enough pages.'}${c.over?` <span style="color:var(--bad)">That's more than the ${c.cap}-page capacity.</span>`:''}` : 'Pick at least one expansion.'; };
+  const calc=()=>{ read(); const c=binderCalc(b); document.getElementById('bCalc').innerHTML = c.sets.length? `This binder needs <b>${c.need}</b> pages (${c.basis} pockets ÷ ${c.per} per page${b.extraPages?` + ${b.extraPages} spare`:''}). ${c.short?`You need <b>${c.short}</b> more.`:'You have enough pages.'}${c.over?` <span style="color:var(--bad)">That's more than the ${c.cap}-page capacity.</span>`:''}` : 'Pick at least one expansion.'; };
   document.getElementById('mBody').addEventListener('input',calc); document.getElementById('mBody').addEventListener('change',calc);
   document.getElementById('bSetQ').oninput=e=>{const q=e.target.value.toLowerCase(); document.querySelectorAll('#bSets label').forEach(l=>l.style.display=l.dataset.n.includes(q)?'':'none');};
   calc();
@@ -886,10 +988,10 @@ function viewOptions(el){
   <h2>Wallpaper</h2>
   <p>Upload any picture and it will be tiled across the whole page behind the wiki, like Bulbapedia's background.</p>
   <div class="toolbar" style="align-items:flex-start">
-    <div style="width:160px;height:110px;border:1px solid #ccc;border-radius:6px;background:url('${wallURL()}') repeat ${S.config.wallColor||'#6aa86a'};background-size:${(w.size||(w.id||w.data?260:120))/2}px auto"></div>
+    <div style="width:160px;height:110px;border:1px solid #ccc;border-radius:6px;background:url('${wallURL()}') repeat ${S.config.wallColor||'#6aa86a'};background-size:${(w.size||(w.id||w.data||w.s?260:120))/2}px auto"></div>
     <div class="rw" style="display:flex;flex-direction:column;gap:8px">
-      <div><label class="btn pri" style="cursor:pointer">Choose picture…<input type="file" id="wfile" accept="image/*" hidden></label> ${w.id||w.data?'<button class="btn" id="wreset">Use default pattern</button>':''}</div>
-      <div>Tile size <input type="range" id="wsize" min="60" max="900" step="10" value="${w.size||(w.id||w.data?260:120)}" style="vertical-align:middle"> <span id="wsv">${w.size||(w.id||w.data?260:120)}px</span></div>
+      <div><label class="btn pri" style="cursor:pointer">Choose picture…<input type="file" id="wfile" accept="image/*" hidden></label> ${w.id||w.data||w.s?'<button class="btn" id="wreset">Use default pattern</button>':''}</div>
+      <div>Tile size <input type="range" id="wsize" min="60" max="900" step="10" value="${w.size||(w.id||w.data||w.s?260:120)}" style="vertical-align:middle"> <span id="wsv">${w.size||(w.id||w.data||w.s?260:120)}px</span></div>
       <div>Backdrop colour <input type="color" id="wcol" value="${S.config.wallColor||'#6aa86a'}"> <label style="margin-left:12px"><input type="checkbox" id="wscroll" ${S.config.wallScroll?'checked':''}> Scroll wallpaper with the page</label></div>
       <div id="wmsg" style="font-size:12px;color:#666"></div>
     </div>
@@ -900,12 +1002,14 @@ function viewOptions(el){
   <p>Copy your whole collection as text to keep a backup, or paste a backup to restore it.</p>
   <p><button class="btn" id="bcopy">Copy backup</button> <button class="btn rw" id="bshow">Restore from backup…</button></p>
   <div id="brest" style="display:none" class="rw"><textarea id="btxt" rows="5" style="width:100%" placeholder="Paste backup text here"></textarea><p><button class="btn pri" id="bgo">Restore (replaces current data)</button></p></div>
-  <h2>Storage</h2><p>${mode==='db'?'Your collection is saved to your claude.ai account and syncs across your devices.':'Your collection is saved in this browser only.'}${readOnly?' You have view-only access to this page.':''}</p>`;
+  <h2>${mode==='supa'?'Sign in &amp; sharing':'Storage'}</h2>${mode==='supa'? supaPanelHTML() : `<p>${mode==='db'?'Your collection is saved to your claude.ai account and syncs across your devices.':'Your collection is saved in this browser only.'}${readOnly?' You have view-only access to this page.':''}</p>`}`;
+  wireSupaPanel(el);
   const msg=t=>{document.getElementById('wmsg').textContent=t;};
   const f=el.querySelector('#wfile');
   if(f) f.onchange=async()=>{
     const file=f.files[0]; if(!file) return;
-    if(assets){ msg('Uploading…'); try{ const r=await assets.upload(file); S.config.wall={id:r.id,size:(w.size||260)}; saveConfig(); route(true); toast('Wallpaper updated'); }catch(e){ msg('Upload failed: '+(e&&e.message||'unknown error')); } }
+    if(mode==='supa'){ msg('Uploading…'); try{ const blob=await resizeImage(file,1200,1200); const old=(S.config.wall||{}).s; const path=await supaUpload(blob,'wallpaper'); S.config.wall={s:path,size:(w.size||260)}; saveConfig(); if(old){ try{ await supa.storage.from('pictures').remove([old]); }catch(e){} } route(true); toast('Wallpaper updated'); }catch(e){ msg('Upload failed: '+(e&&e.message||'unknown error')); } }
+    else if(assets){ msg('Uploading…'); try{ const r=await assets.upload(file); S.config.wall={id:r.id,size:(w.size||260)}; saveConfig(); route(true); toast('Wallpaper updated'); }catch(e){ msg('Upload failed: '+(e&&e.message||'unknown error')); } }
     else { // fallback: shrink and store inline
       if(mode==='db'){ msg('Uploading pictures isn\'t available in this view, so the picture will be shrunk and stored with your settings.'); }
       const data=await shrinkImage(file,600); S.config.wall={data,size:(w.size||260)}; saveConfig(); route(true); }
@@ -933,11 +1037,12 @@ async function idbOp(mode,fn){ const d=await idb(); return new Promise((res,rej)
 async function idbLoadAll(){ try{ const d=await idb(); await new Promise(res=>{ const t=d.transaction('img','readonly'); const c=t.objectStore('img').openCursor(); c.onsuccess=()=>{ const cur=c.result; if(cur){ IDBURL[cur.key]=URL.createObjectURL(cur.value); cur.continue(); } else res(); }; c.onerror=()=>res(); }); softRerender(); }catch(e){} }
 function imgKey(setId,kind,cardKey){ return kind==='card'? `card:${setId}:${cardKey}` : `${kind}:${setId}`; }
 function imgVal(setId,kind,cardKey){ const m=S.images[setId]; if(!m) return null; return kind==='card'? (m.cards||{})[cardKey]||null : m[kind]||null; }
-function imgURL(setId,kind,cardKey){ const v=imgVal(setId,kind,cardKey); if(!v) return null; if(v.startsWith('a:')) return '/_blob/'+v.slice(2); return IDBURL[imgKey(setId,kind,cardKey)]||null; }
+function supaURL(path){ return supa? supa.storage.from('pictures').getPublicUrl(path).data.publicUrl : null; }
+function imgURL(setId,kind,cardKey){ const v=imgVal(setId,kind,cardKey); if(!v) return null; if(v.startsWith('a:')) return '/_blob/'+v.slice(2); if(v.startsWith('s:')) return supaURL(v.slice(2)); return IDBURL[imgKey(setId,kind,cardKey)]||null; }
 function imgTag(setId,kind,cardKey,style,extra){ const u=imgURL(setId,kind,cardKey); return u? `<img src="${esc(u)}" alt="" loading="lazy" style="${style||''}" ${extra||''}>` : ''; }
 const LOGOIMG={};
 function logoFor(b,asImage){ const id=(b.sets||[]).find(x=>imgURL(x,'logo')); if(!id||(b.sets||[]).length!==1) return null; if(!asImage) return id; const u=imgURL(id,'logo'); if(!LOGOIMG[u]){ const im=new Image(); im.src=u; LOGOIMG[u]=im; } return LOGOIMG[u]; }
-function saveImages(setId){ if(mode==='db'){ queueWrite('images/'+setId, ()=>{ const m=S.images[setId]; return m&&(m.sym||m.logo||Object.keys(m.cards||{}).length)? db.collection('images').doc(setId).set(m) : db.collection('images').doc(setId).delete(); }); } else lsSave(); }
+function saveImages(setId){ if(mode==='local'){ lsSave(); return; } persist('images/'+setId, ()=>{ const m=S.images[setId]; return m&&(m.sym||m.logo||m.cover||m.spine||Object.keys(m.cards||{}).length)? m : null; }); }
 function pickFile(cb,multiple){ const i=document.createElement('input'); i.type='file'; i.accept='image/*'; if(multiple) i.multiple=true; i.onchange=()=>{ if(i.files.length) cb(multiple?[...i.files]:i.files[0]); }; i.click(); }
 function resizeImage(file,maxW,maxH){ return new Promise((res)=>{ const img=new Image(); img.onload=()=>{ const r=Math.min(1,maxW/img.width,maxH/img.height); if(r>=1 && file.size<400000){ URL.revokeObjectURL(img.src); res(file); return; } const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); c.toBlob(b=>res(b||file),'image/webp',0.86); }; img.onerror=()=>res(file); img.src=URL.createObjectURL(file); }); }
 const IMG_MAX={card:[500,700],logo:[700,300],sym:[160,160],cover:[1000,1300],spine:[400,1700]};
@@ -947,17 +1052,26 @@ async function storeImage(setId,kind,cardKey,file){
   const key=imgKey(setId,kind,cardKey); const old=imgVal(setId,kind,cardKey); let val;
   const assets=window.__assets;
   if(mode==='db'&&assets){ const r=await assets.upload(blob); val='a:'+r.id; }
+  else if(mode==='supa'){ val='s:'+await supaUpload(blob,key); }
   else { await idbOp('readwrite',st=>st.put(blob,key)); if(IDBURL[key]) URL.revokeObjectURL(IDBURL[key]); IDBURL[key]=URL.createObjectURL(blob); val='i'; }
   const m=S.images[setId]||(S.images[setId]={cards:{}}); m.cards=m.cards||{};
   if(kind==='card') m.cards[cardKey]=val; else m[kind]=val;
   saveImages(setId);
   if(old&&old.startsWith('a:')&&old!==val&&assets){ try{ await assets.delete(old.slice(2)); }catch(e){} }
+  if(old&&old.startsWith('s:')&&old!==val){ try{ await supa.storage.from('pictures').remove([old.slice(2)]); }catch(e){} }
+}
+async function supaUpload(blob,key){
+  const ext=(blob.type==='image/webp')?'webp':(blob.type==='image/png')?'png':(blob.type==='image/gif')?'gif':'jpg';
+  const path=key.replace(/[^A-Za-z0-9_\-]+/g,'_')+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)+'.'+ext;
+  const {error}=await supa.storage.from('pictures').upload(path,blob,{contentType:blob.type||'image/jpeg',cacheControl:'31536000',upsert:false});
+  if(error) throw new Error(error.message); return path;
 }
 async function removeImage(setId,kind,cardKey){
   if(readOnly) return; const old=imgVal(setId,kind,cardKey); if(!old) return; const m=S.images[setId];
   if(kind==='card') delete m.cards[cardKey]; else delete m[kind];
   saveImages(setId);
   if(old.startsWith('a:')&&window.__assets){ try{ await window.__assets.delete(old.slice(2)); }catch(e){} }
+  else if(old.startsWith('s:')){ try{ await supa.storage.from('pictures').remove([old.slice(2)]); }catch(e){} }
   else { const key=imgKey(setId,kind,cardKey); try{ await idbOp('readwrite',st=>st.delete(key)); }catch(e){} if(IDBURL[key]){ URL.revokeObjectURL(IDBURL[key]); delete IDBURL[key]; } }
 }
 function bpKey(bid){ return 'binder-'+bid; }
@@ -1009,8 +1123,104 @@ function cardModal(setId,key){
   const rm=document.getElementById('cmRm'); if(rm) rm.onclick=async()=>{ if(!confirmInline('Remove this picture?')) return; await removeImage(setId,'card',key); cardModal(setId,key); };
 }
 
+/* ================= SUPABASE (live website mode) ================= */
+let supa=null, supaUser=null, localSnapshot=null;
+function loadScript(src){ return new Promise((res,rej)=>{ const sc=document.createElement('script'); sc.src=src; sc.onload=res; sc.onerror=()=>rej(new Error('Could not load '+src)); document.head.appendChild(sc); }); }
+function applyRow(path,data){
+  const i=path.indexOf('/'); const c=path.slice(0,i), id=path.slice(i+1);
+  if(c==='owned'){ if(data) S.owned[id]=normLoc(JSON.parse(JSON.stringify(data.c||{}))); else delete S.owned[id]; }
+  else if(c==='binders'){ if(data) S.binders[id]=data; else delete S.binders[id]; }
+  else if(c==='images'){ if(data) S.images[id]=data; else delete S.images[id]; }
+  else if(c==='config'){ S.config=data||{}; applyConfig(); }
+}
+async function initSupa(SC){
+  mode='supa'; setReadOnly(true);
+  localSnapshot=JSON.parse(JSON.stringify({owned:S.owned,binders:S.binders,config:S.config,images:S.images}));
+  S.owned={}; S.binders={}; S.images={}; S.config={};
+  document.getElementById('view').innerHTML='<p style="padding:30px;text-align:center;color:#666">Loading collection…</p>';
+  try{
+    if(!window.supabase) await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');
+    supa=window.supabase.createClient(SC.url,SC.key,{auth:{flowType:'implicit',persistSession:true,detectSessionInUrl:true,autoRefreshToken:true}});
+  }catch(e){ banner('warn','Could not connect to the online collection ('+esc(e.message)+'). Check your internet connection and reload.'); route(); return; }
+  try{ const {data}=await supa.auth.getSession(); supaUser=data&&data.session? data.session.user : null; }catch(e){}
+  setReadOnly(!supaUser);
+  if(/access_token=|error_description=/.test(location.hash)){ history.replaceState(null,'',location.pathname+location.search+'#home'); }
+  supa.auth.onAuthStateChange((ev,session)=>{ const was=!!supaUser; supaUser=session?session.user:null; setReadOnly(!supaUser); if(was!==!!supaUser){ supaBanner(); route(true); } });
+  // load everything
+  try{
+    let from=0; for(;;){ const {data,error}=await supa.from('kv').select('path,data').order('path').range(from,from+999); if(error) throw error; data.forEach(r=>applyRow(r.path,r.data)); if(data.length<1000) break; from+=1000; }
+  }catch(e){ banner('warn','Could not load the collection: '+esc(e.message||String(e))+'. If you just set up Supabase, check that you ran the setup SQL.'); }
+  applyConfig(); supaBanner(); route();
+  // live updates
+  try{
+    supa.channel('kv-live').on('postgres_changes',{event:'*',schema:'public',table:'kv'},payload=>{
+      const row=payload.new&&payload.new.path? payload.new : payload.old; if(!row||!row.path) return;
+      if(dirty[row.path]) return;
+      applyRow(row.path, payload.eventType==='DELETE'? null : payload.new.data); softRerender();
+    }).subscribe();
+  }catch(e){}
+}
+function localCounts(){ const L=localSnapshot||{}; let cards=0, pics=0; Object.values(L.owned||{}).forEach(c=>cards+=Object.keys(c).length); Object.values(L.images||{}).forEach(m=>{ ['sym','logo','cover','spine'].forEach(k=>{ if(m[k]==='i') pics++; }); Object.values(m.cards||{}).forEach(v=>{ if(v==='i') pics++; }); }); return {cards,pics,binders:Object.keys(L.binders||{}).length}; }
+function migrationDone(){ try{ return localStorage.getItem('collectapedia.movedOnline')==='1'; }catch(e){ return false; } }
+function supaBanner(){
+  if(supaUser){
+    const lc=localCounts();
+    if(!migrationDone() && (lc.cards||lc.pics||lc.binders)) banner('warn',`This browser still has <b>${lc.cards}</b> cards, <b>${lc.binders}</b> binders and <b>${lc.pics}</b> pictures saved only here. <button class="btn pri" id="moveOnline" style="margin-left:6px">Move them online</button>`);
+    else banner('info',`Signed in as owner (${esc(supaUser.email||'')}). Changes save online and your friends see them live. <a data-go="options">Sign out</a>`);
+    const mv=document.getElementById('moveOnline'); if(mv) mv.onclick=moveOnline;
+  } else {
+    const b=document.getElementById('banner'); b.className=''; b.innerHTML='';
+  }
+}
+async function moveOnline(){
+  const L=localSnapshot; if(!L||!supaUser) return;
+  const btn=document.getElementById('moveOnline'); if(btn){ btn.disabled=true; btn.textContent='Moving…'; }
+  try{
+    // counts: merge (keep the higher count in each place)
+    for(const [sid,c] of Object.entries(L.owned||{})){ const cur=S.owned[sid]||(S.owned[sid]={}); for(const [k,e] of Object.entries(c)){ const o=cur[k]||[0,0,0]; cur[k]=[Math.max(o[0]||0,e[0]||0),Math.max(o[1]||0,e[1]||0),Math.max(o[2]||0,e[2]||0)]; } saveSet(sid); }
+    for(const b of Object.values(L.binders||{})){ if(!S.binders[b.id]) saveBinder(b); }
+    if(!S.config.title && L.config && L.config.title){ S.config.title=L.config.title; S.config.wallColor=L.config.wallColor; saveConfig(); }
+    // pictures from this browser's storage
+    const jobs=[]; for(const [sid,m] of Object.entries(L.images||{})){ ['sym','logo','cover','spine'].forEach(k=>{ if(m[k]==='i') jobs.push([sid,k,null]); }); Object.entries(m.cards||{}).forEach(([ck,v])=>{ if(v==='i') jobs.push([sid,'card',ck]); }); }
+    let done=0, failed=0;
+    for(const [sid,kind,ck] of jobs){
+      const key=imgKey(sid,kind,ck);
+      try{ const blob=await idbOp('readonly',st=>st.get(key)); if(!blob){ failed++; continue; }
+        const path=await supaUpload(blob,key); const m=S.images[sid]||(S.images[sid]={cards:{}}); m.cards=m.cards||{};
+        if(kind==='card') m.cards[ck]='s:'+path; else m[kind]='s:'+path;
+        done++; if(done%10===0||done===jobs.length){ toast(`Uploading pictures: ${done} of ${jobs.length}`); }
+      }catch(e){ failed++; }
+    }
+    Object.keys(S.images).forEach(saveImages);
+    try{ localStorage.setItem('collectapedia.movedOnline','1'); }catch(e){}
+    toast(`Done! Moved your collection online${jobs.length?` (${done} pictures${failed?`, ${failed} failed`:''})`:''}.`);
+  }catch(e){ toast('Something went wrong: '+(e.message||e)); }
+  supaBanner(); route(true);
+}
+function supaPanelHTML(){
+  if(supaUser) return `<p>Signed in as <b>${esc(supaUser.email||'')}</b>. Everything you change is saved online, and anyone with this website's link sees it live, read-only.</p>
+    <p><button class="btn" id="supaOut">Sign out</button> ${(()=>{const lc=localCounts(); return (lc.cards||lc.pics||lc.binders)? `<button class="btn" id="supaMove">Move this browser's saved cards &amp; pictures online</button>`:'';})()}</p>`;
+  return `<p>Friends can browse this collection without signing in. <b>The owner</b> signs in here to make changes.</p>
+    <div class="toolbar" style="max-width:520px"><input type="email" id="supaEmail" placeholder="Your email address" style="flex:1;min-width:200px"><button class="btn pri" id="supaIn">Email me a sign-in link</button></div>
+    <p id="supaMsg" style="font-size:12.5px;color:#555"></p>`;
+}
+function wireSupaPanel(el){
+  if(mode!=='supa') return;
+  const out=el.querySelector('#supaOut'); if(out) out.onclick=async()=>{ await supa.auth.signOut(); toast('Signed out'); };
+  const mv=el.querySelector('#supaMove'); if(mv) mv.onclick=()=>{ try{ localStorage.removeItem('collectapedia.movedOnline'); }catch(e){} moveOnline(); };
+  const inb=el.querySelector('#supaIn'); if(inb) inb.onclick=async()=>{
+    const email=el.querySelector('#supaEmail').value.trim(); const msg=el.querySelector('#supaMsg');
+    if(!/^\S+@\S+\.\S+$/.test(email)){ msg.textContent='Please enter a valid email address.'; return; }
+    inb.disabled=true; msg.textContent='Sending…';
+    const {error}=await supa.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
+    inb.disabled=false;
+    msg.innerHTML = error? 'Could not send the link: '+esc(error.message) : 'Check your inbox and click the link in the email. It brings you back here signed in.';
+  };
+}
+function ownerLink(){ const f=document.querySelector('.foot'); if(f&&!f.querySelector('#ownerIn')){ const a=document.createElement('a'); a.id='ownerIn'; a.dataset.go='options'; a.textContent=' · Owner sign in'; f.appendChild(a); } }
+
 idbLoadAll();
-initStorage();
+initStorage().then(()=>{ if(mode==='supa') ownerLink(); });
 })();
 </script>
 </body>

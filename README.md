@@ -1,16 +1,22 @@
 # My Collectapedia
 
-A Bulbapedia-style tracker for a Pokémon TCG collection: every English expansion with its full card list, where each card is stored (binder / bulk / other), and a binder workshop for pages and labels.
+A Bulbapedia-style tracker for a Pokémon TCG collection: every English expansion with its full card list, where each card is stored (binder / bulk / other), binder planning and a page-by-page binder view.
 
 ## Files
-- `index.html` – the whole site (layout, styles and code)
+- `index.html` – the whole site
 - `data.js` – set and card lists (from the open PokemonTCG/pokemon-tcg-data project)
+- `supabase-config.js` – your Supabase Project URL and publishable key (fill these in)
+- `setup.sql` – run once in Supabase's SQL Editor (put your email in it first)
 
-## Publish with GitHub Pages
-1. Create a new repository and upload `index.html`, `data.js` and this README.
-2. Go to **Settings → Pages**, set **Source** to "Deploy from a branch", pick `main` and `/ (root)`, then save.
-3. After a minute your site is live at `https://<your-username>.github.io/<repo-name>/`.
+## How it works
+- With `supabase-config.js` filled in, the collection is stored online in Supabase.
+  Anyone with the link can browse it read-only; only the owner's email can sign in and edit (Options → sign-in link).
+- Without it, the site saves to the browser only.
 
-## Where your data is saved
-On GitHub Pages your collection is saved in your browser (localStorage), so each browser/device keeps its own copy.
-Use **Options → Backup** to copy your data and **Restore from backup** to move it to another browser.
+## Setup summary
+1. Create a free Supabase project.
+2. Put your email into `setup.sql`, paste it into SQL Editor and Run.
+3. Authentication → URL Configuration: set Site URL (and a Redirect URL) to your GitHub Pages address.
+4. Copy the Project URL and publishable key into `supabase-config.js`.
+5. Upload all files to the GitHub repository.
+6. Open the site, Options → email yourself a sign-in link, click it, then press "Move them online".
