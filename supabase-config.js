@@ -4,6 +4,6 @@
 //   key: the "publishable" key (sb_publishable_...) or the "anon public" key
 // Both are safe to put on a public website.
 window.SUPABASE_CONFIG = {
-  url: "https://lowercasecase.github.io/pokemon-collection/#home",
+  url: "https://nlsnkvwqjqqohlxwjtku.supabase.co",
   key: "sb_publishable_DcvcWHO4RzFawFIZa0aeOg_KmClksUL"
 };
