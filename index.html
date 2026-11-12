@@ -223,7 +223,7 @@ canvas.preview{max-width:100%;border:1px solid #ccc;border-radius:4px;background
 </div>
 <div id="modal"><div class="dlg"><div class="dh"><span id="mTitle"></span><a id="mClose">✕</a></div><div class="db" id="mBody"></div><div class="df" id="mFoot"></div></div></div>
 <div id="toast"></div>
-<script src="data.js"></script>
+<script src="data.js?v=3"></script>
 <script src="supabase-config.js" onerror="void 0"></script>
 <script>
 (function(){
@@ -535,7 +535,7 @@ function viewSet(el,id,soft){
   <div class="infobox" style="${styleVars(s.series)}">
     <div class="ttl">${esc(s.name)}<small>${esc(s.series)}</small></div>
     <div class="emb">${imgTag(id,'logo',null,'max-width:100%;max-height:120px')||`<div class="big">${esc(s.name)}</div>`}<div style="margin-top:6px">${s.code?`<span class="code" style="font-size:14px">${esc(s.code)}</span>`:''}</div>
-      <div class="rw" style="margin-top:8px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap"><button class="btn" data-up="logo" style="font-size:11.5px">${imgVal(id,'logo')?'Change':'Add'} logo</button><button class="btn" data-up="sym" style="font-size:11.5px">${imgVal(id,'sym')?'Change':'Add'} symbol</button>${imgVal(id,'logo')?'<button class="btn danger" data-rm="logo" style="font-size:11.5px" title="Remove logo">✕ logo</button>':''}${imgVal(id,'sym')?'<button class="btn danger" data-rm="sym" style="font-size:11.5px" title="Remove symbol">✕ symbol</button>':''}</div></div>
+      <div class="rw" style="margin-top:8px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap"><button class="btn" data-up="logo" style="font-size:11.5px">${imgVal(id,'logo')?'Change':officialOn()?'Use my own':'Add'} logo</button><button class="btn" data-up="sym" style="font-size:11.5px">${imgVal(id,'sym')?'Change':officialOn()?'Use my own':'Add'} symbol</button>${imgVal(id,'logo')?`<button class="btn danger" data-rm="logo" style="font-size:11.5px" title="Remove my logo">✕ ${officialOn()?'my ':''}logo</button>`:''}${imgVal(id,'sym')?`<button class="btn danger" data-rm="sym" style="font-size:11.5px" title="Remove my symbol">✕ ${officialOn()?'my ':''}symbol</button>`:''}</div></div>
     <table>
       <tr><th>Series</th><td>${esc(s.series)}</td></tr>
       ${s.no?`<tr><th>Set no.</th><td>${s.no}</td></tr>`:''}
@@ -965,7 +965,8 @@ function labelDialog(id,kind){
   if(!readOnly) foot.unshift(mkBtn('Mark as printed','',()=>{ read(); b[field]='printed'; saveBinder(b); closeModal(); toast('Marked as printed'); }));
   foot.push(mkBtn('⬇ Download PNG','pri',async()=>{
     read(); const c=document.createElement('canvas'); drawLabel(b,kind,c,1);
-    const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+    let blob; try{ blob=await new Promise((r,j)=>{ try{ c.toBlob(r,'image/png'); }catch(e){ j(e); } }); }
+    catch(e){ const keep=b.label.useLogo; b.label.useLogo=false; drawLabel(b,kind,c,1); b.label.useLogo=keep; blob=await new Promise(r=>c.toBlob(r,'image/png')); toast('The logo could not be added to the file, so the set name was used instead.'); }
     const name=`${(b.name||'binder').replace(/[^\w\- ]+/g,'').trim()||'binder'} - ${kind} label.png`;
     const d=window.__dl;
     if(!d){ // outside claude.ai (e.g. GitHub Pages): normal browser download
@@ -1047,15 +1048,19 @@ function cardRow(setId,key){ let m=ROWMAP[setId]; if(!m){ m=ROWMAP[setId]={}; (T
 function officialOn(){ return !(window.claude&&window.claude.use) && S.config.officialPics!==false; }
 function officialURL(setId,key,large){
   if(!officialOn()) return null; const r=cardRow(setId,key); if(!r) return null;
-  const x=(T.imgx[setId]||{})[key];
+  const x=((T.imgx||{})[setId]||{})[key];
   if(x) return large? x.replace(/\/small$/,'/large').replace(/\.png$/,'_hires.png') : x;
-  if(T.imgpat[setId]==='x') return `https://images.scrydex.com/pokemon/${setId}-${encodeURIComponent(r[1])}/${large?'large':'small'}`;
+  if((T.imgpat||{})[setId]==='x') return `https://images.scrydex.com/pokemon/${setId}-${encodeURIComponent(r[1])}/${large?'large':'small'}`;
   return `https://images.pokemontcg.io/${setId}/${encodeURIComponent(r[1])}${large?'_hires':''}.png`;
 }
-function imgURL(setId,kind,cardKey){ const v=imgVal(setId,kind,cardKey); if(!v) return kind==='card'? officialURL(setId,cardKey) : null; if(v.startsWith('a:')) return '/_blob/'+v.slice(2); if(v.startsWith('s:')) return supaURL(v.slice(2)); return IDBURL[imgKey(setId,kind,cardKey)]||null; }
+function officialSetImg(setId,kind){
+  if(!officialOn()||!SETS[setId]) return null; const k=kind==='sym'?'symbol':'logo';
+  return (T.imgpat||{})[setId]==='x'? `https://images.scrydex.com/pokemon/${setId}-${k}/${k}` : `https://images.pokemontcg.io/${setId}/${k}.png`;
+}
+function imgURL(setId,kind,cardKey){ const v=imgVal(setId,kind,cardKey); if(!v) return kind==='card'? officialURL(setId,cardKey) : (kind==='sym'||kind==='logo')? officialSetImg(setId,kind) : null; if(v.startsWith('a:')) return '/_blob/'+v.slice(2); if(v.startsWith('s:')) return supaURL(v.slice(2)); return IDBURL[imgKey(setId,kind,cardKey)]||null; }
 function imgTag(setId,kind,cardKey,style,extra){ const u=imgURL(setId,kind,cardKey); return u? `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'" style="${style||''}" ${extra||''}>` : ''; }
 const LOGOIMG={};
-function logoFor(b,asImage){ const id=(b.sets||[]).find(x=>imgURL(x,'logo')); if(!id||(b.sets||[]).length!==1) return null; if(!asImage) return id; const u=imgURL(id,'logo'); if(!LOGOIMG[u]){ const im=new Image(); im.src=u; LOGOIMG[u]=im; } return LOGOIMG[u]; }
+function logoFor(b,asImage){ const id=(b.sets||[]).find(x=>imgURL(x,'logo')); if(!id||(b.sets||[]).length!==1) return null; if(!asImage) return id; const u=imgURL(id,'logo'); if(!LOGOIMG[u]){ const im=new Image(); if(/^https?:/.test(u)) im.crossOrigin='anonymous'; im.src=u; LOGOIMG[u]=im; } return LOGOIMG[u]; }
 function saveImages(setId){ if(mode==='local'){ lsSave(); return; } persist('images/'+setId, ()=>{ const m=S.images[setId]; return m&&(m.sym||m.logo||m.cover||m.spine||Object.keys(m.cards||{}).length)? m : null; }); }
 function pickFile(cb,multiple){ const i=document.createElement('input'); i.type='file'; i.accept='image/*'; if(multiple) i.multiple=true; i.onchange=()=>{ if(i.files.length) cb(multiple?[...i.files]:i.files[0]); }; i.click(); }
 function resizeImage(file,maxW,maxH){ return new Promise((res)=>{ const img=new Image(); img.onload=()=>{ const r=Math.min(1,maxW/img.width,maxH/img.height); if(r>=1 && file.size<400000){ URL.revokeObjectURL(img.src); res(file); return; } const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); c.toBlob(b=>res(b||file),'image/webp',0.86); }; img.onerror=()=>res(file); img.src=URL.createObjectURL(file); }); }
