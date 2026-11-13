@@ -87,9 +87,10 @@ p{margin:6px 0 10px}
 #banner.info{background:#eaf3ff;border:1px solid #a3c7f0}
 #banner.warn{background:var(--warnbg);border:1px solid #e6c57a}
 /* ---------- Roundy tables ---------- */
-.roundy{border-radius:10px;padding:3px;background:var(--hc,#7ab97a);border:2px solid var(--hb,#4f8a4f);margin:8px 0 16px}
+.roundy{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;padding:3px;background:var(--hc,#7ab97a);border:2px solid var(--hb,#4f8a4f);margin:8px 0 16px}
 .roundy>.cap{color:#fff;font-weight:700;text-align:center;padding:4px 8px 6px;font-size:15px;text-shadow:0 1px 1px rgba(0,0,0,.35)}
 .roundy table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border-radius:8px;overflow:hidden;font-size:13px}
+.dualcol{min-width:230px}
 .roundy th{background:var(--hl,#d4ead4);padding:5px 6px;font-weight:700;text-align:center;border-bottom:1px solid var(--hb,#4f8a4f);white-space:nowrap}
 .roundy td{padding:3px 7px;border-top:1px solid #eaecf0;vertical-align:middle}
 .roundy tr:nth-child(even) td{background:#fafbfc}
@@ -182,11 +183,28 @@ canvas.preview{max-width:100%;border:1px solid #ccc;border-radius:4px;background
 @media (max-width:900px){
   #side{display:none}
   #top{flex-wrap:wrap}
-  #search input{width:140px}
+  
   .infobox{float:none;width:auto;margin:0 0 14px}
   .binder .bb{grid-template-columns:1fr}
   #content{padding:14px 12px;border-radius:0 0 12px 12px}
   .hide-m{display:none}
+  .dualcol{min-width:150px}
+  #top{padding:8px 8px 0;gap:8px}
+  #tabs{flex-wrap:nowrap;overflow-x:auto;flex:1 1 100%;width:100%;order:2;-webkit-overflow-scrolling:touch}
+  #logo{order:1;border-radius:14px;border-bottom:1px solid var(--border)}
+  #search{order:3}
+  #tabs a{white-space:nowrap;padding:5px 10px}
+  #search{width:100%;margin-bottom:4px}
+  #search input{flex:1;width:auto}
+  #wrap{padding:0 8px 20px}
+  .roundy td,.roundy th{padding:3px 4px}
+  .blab{width:40px!important;font-size:10px!important}
+  .dualcol{min-width:0}
+  .prog .bar{min-width:40px}
+  h1.ft{font-size:24px}
+  .toolbar .grp{flex-wrap:wrap;row-gap:4px}
+  .toolbar input[type=search]{width:100%!important}
+  .qty button{width:26px;height:26px}
 }
 </style>
 </head>
@@ -373,7 +391,7 @@ function ownedOf(setId){return S.owned[setId]||{};}
 function GOAL(){ return 2; }
 function compHTML(got,need){ const p=need?got*100/need:0; const t=need?(p>0&&p<0.1?'<0.1':(Math.floor(p*10)/10)):0; return `<div class="prog" title="${got} of ${need}"><div class="bar"><i style="width:${Math.min(100,p)}%"></i></div><span class="nw"><b>${t}%</b></span></div>`; }
 function pctTxt(a,b){ if(!b) return '0'; const p=a*100/b; return p>0&&p<0.1?'<0.1':String(Math.floor(p*10)/10); }
-function barRow(label,a,b,color){ const p=b?Math.min(100,a*100/b):0; return `<div class="prog" style="margin:2px 0" title="${label}: ${a} of ${b}"><span style="width:52px;font-size:11px;color:#555">${label}</span><div class="bar"><i style="width:${p}%;${color?`background:${color}`:''}"></i></div><span class="nw" style="min-width:92px;text-align:right">${a}/${b} · <b>${pctTxt(a,b)}%</b></span></div>`; }
+function barRow(label,a,b,color){ const p=b?Math.min(100,a*100/b):0; return `<div class="prog" style="margin:2px 0" title="${label}: ${a} of ${b}"><span class="blab" style="width:52px;font-size:11px;color:#555">${label}</span><div class="bar"><i style="width:${p}%;${color?`background:${color}`:''}"></i></div><span class="nw" style="text-align:right"><span class="hide-m">${a}/${b} · </span><b>${pctTxt(a,b)}%</b></span></div>`; }
 const SPECIAL_BAR='linear-gradient(90deg,#8e6fd8,#4fb3d9,#7fd08a)';
 function dualHTML(st){ return barRow('Regular',st.have,st.total)+barRow('Special',st.full,st.total,SPECIAL_BAR); }
 function setStats(setId){
@@ -515,10 +533,10 @@ function viewExpansions(el){
     let sh=0,stt=0; rows.forEach(s=>{const st=setStats(s.id);sh+=st.have;stt+=st.total;});
     return `<h2 id="ser${i}">${esc(n)}</h2>
     <div class="roundy" style="${styleVars(n)}"><table>
-      <tr><th>#</th><th>Symbol</th><th class="hide-m">Logo</th><th>Expansion</th><th class="hide-m">Code</th><th>Cards</th><th class="hide-m">Release date</th><th style="min-width:260px">Regular set / Special set</th><th class="hide-m">Binder</th></tr>
+      <tr><th>#</th><th class="hide-m">Symbol</th><th class="hide-m">Logo</th><th>Expansion</th><th class="hide-m">Code</th><th>Cards</th><th class="hide-m">Release date</th><th class="dualcol">Regular set / Special set</th><th class="hide-m">Binder</th></tr>
       ${rows.map(s=>{const st=setStats(s.id); const bs=bindersForSet(s.id); const up=s.release>TODAY;
         return `<tr class="${st.have&&st.have>=st.total?'have':''}"><td class="c">${s.no||'—'}</td>
-        <td class="c">${imgTag(s.id,'sym',null,'max-height:26px;max-width:40px')||'<span style="color:#ccc">—</span>'}</td>
+        <td class="c hide-m">${imgTag(s.id,'sym',null,'max-height:26px;max-width:40px')||'<span style="color:#ccc">—</span>'}</td>
         <td class="c hide-m">${imgTag(s.id,'logo',null,'max-height:34px;max-width:110px')||'<span style="color:#ccc">—</span>'}</td>
         <td><a data-set="${s.id}"><b>${esc(s.name)}</b></a>${up?' <span class="tag warn">upcoming</span>':''}${s.subs.length?`<div style="font-size:11.5px;color:#666">+ ${s.subs.map(x=>esc(x[0])).join(', ')}</div>`:''}</td>
         <td class="c hide-m">${s.code?`<span class="code">${esc(s.code)}</span>`:'—'}</td>
