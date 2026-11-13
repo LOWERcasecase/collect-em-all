@@ -719,6 +719,21 @@ function viewFind(el){
 }
 
 /* ---------- Binder view (book) ---------- */
+let bvMode='pages', bvFilt='all';
+// Status of one pocket: in the binder, in bulk (so it can be moved into the binder), or missing
+function pocketStatus(x){ const e=ownedOf(x.s.id)[x.r[0]]; const inB=e?(e[0]||0):0, inK=e?(e[1]||0):0;
+  if(x.v<inB) return 'done'; if(x.v<inB+inK) return 'pull'; return 'missing'; }
+function binderListHTML(b,slots,pockets,both,ser){
+  if(!slots.length) return '<p>This binder has no expansions yet.</p>';
+  const per=pockets*(both?2:1); let rows=[], counts={done:0,pull:0,missing:0};
+  slots.forEach((x,i)=>{ const st=pocketStatus(x); counts[st]++; if(bvFilt!=='all'&&bvFilt!==st) return;
+    const sheet=Math.floor(i/per)+1, side=both?(Math.floor((i%per)/pockets)===0?'Front':'Back'):'', pk=(i%pockets)+1;
+    const tag= st==='done'?'<span class="tag ok">In binder</span>' : st==='pull'?'<span class="tag warn">In bulk</span>' : '<span class="tag bad">Missing</span>';
+    rows.push(`<tr data-pk="${esc(x.s.id)}|${esc(x.r[0])}" style="cursor:pointer" class="${st==='done'?'have':''}"><td class="c">${sheet}</td><td class="c">${side}</td><td class="c">${pk}</td><td class="c nw">${esc(x.r[1])}</td><td><div style="display:flex;align-items:center;gap:6px">${imgTag(x.s.id,'card',x.r[0],'height:34px;border-radius:2px'+(st==='done'?'':';filter:grayscale(1);opacity:.6'))}<b>${esc(x.r[2])}</b></div></td>${(b.sets||[]).length>1?`<td class="hide-m">${esc(x.s.name)}</td>`:''}<td>${esc(x.vname||'')}</td><td class="hide-m" style="font-size:12px">${esc(T.rar[x.r[3]]||'')}</td><td>${tag}</td></tr>`); });
+  return `<p style="font-size:12.5px;color:#555"><span class="tag ok">In binder</span> ${counts.done} &nbsp; <span class="tag warn">In bulk, move to binder</span> ${counts.pull} &nbsp; <span class="tag bad">Missing</span> ${counts.missing} &nbsp;·&nbsp; Click a row to change counts.</p>
+  <div class="roundy" style="${styleVars(ser)}"><table><tr><th>Page</th><th>Side</th><th>Pocket</th><th>No.</th><th>Card</th>${(b.sets||[]).length>1?'<th class="hide-m">Expansion</th>':''}<th>Version</th><th class="hide-m">Rarity</th><th>Status</th></tr>
+  ${rows.join('')||'<tr><td colspan="9" class="c" style="padding:14px;color:#777">Nothing here.</td></tr>'}</table></div>`;
+}
 function viewBinderBook(el,id){
   const b=S.binders[id];
   if(!b){ el.innerHTML='<h1 class="ft">Binder not found</h1><p><a data-go="shelf">Back to My binders</a></p>'; return; }
@@ -746,7 +761,9 @@ function viewBinderBook(el,id){
     <div style="font-size:12.5px;color:#555;max-width:280px">${c.sets.map(id=>`<div><a data-set="${id}">${esc(SETS[id].name)}</a> <span class="code">${esc(SETS[id].code)}</span></div>`).join('')}<div style="margin-top:6px">${c.have} of ${c.need} sheets on hand${c.short?` · <span style="color:var(--warn)">need ${c.short} more</span>`:''}</div></div>
   </div>
   <h2>Pages</h2>
-  ${slots.length? `<div class="book">${sheets.map((sh,i)=>{ const pg=both?Math.floor(i/2)+1:i+1; const side=both?(i%2?'back':'front'):''; const a=sh[0], z=sh[sh.length-1];
+  <div class="toolbar"><div class="grp" id="bvMode"><button class="seg ${bvMode==='pages'?'on':''}" data-m="pages">▦ Pages</button><button class="seg ${bvMode==='list'?'on':''}" data-m="list">☰ Card list</button></div>
+    ${bvMode==='list'?`<div class="grp" id="bvFilt">${[['all','All pockets'],['missing','Missing'],['pull','In bulk, move to binder'],['done','In binder']].map(([k,n])=>`<button class="seg ${bvFilt===k?'on':''}" data-f="${k}">${n}</button>`).join('')}</div>`:''}</div>
+  ${bvMode==='list'? binderListHTML(b,slots,pockets,both,ser) : slots.length? `<div class="book">${sheets.map((sh,i)=>{ const pg=both?Math.floor(i/2)+1:i+1; const side=both?(i%2?'back':'front'):''; const a=sh[0], z=sh[sh.length-1];
     const cells=[]; for(let k=0;k<pockets;k++) cells.push(pocketHTML(sh[k]));
     return `<div class="sheet"><h4>Page ${pg}${side?' · '+side:''}<span>${esc(a.r[1])} – ${esc(z.r[1])}${c.sets.length>1&&a.s!==z.s?'':''}</span></h4><div class="pockets" style="grid-template-columns:repeat(${cols},1fr)">${cells.join('')}</div></div>`; }).join('')}</div>`
    : '<p>This binder has no expansions yet. <a data-go="binders">Add some in the workshop</a>.</p>'}`;
@@ -754,6 +771,9 @@ function viewBinderBook(el,id){
   const sc_=document.getElementById('bvSpine'); if(sc_){ const L=labelDefaults(b); drawLabel(b,'spine',sc_,300/(L.sh*DPI)*2); }
   if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ if(fc&&fc.isConnected) drawLabel(b,'front',fc,0.3); if(sc_&&sc_.isConnected){ const L=labelDefaults(b); drawLabel(b,'spine',sc_,300/(L.sh*DPI)*2);} });
   el.querySelector('#bvColor').onclick=e=>{ const t=e.target.closest('[data-c]'); if(!t||readOnly) return; b.colorBy=t.dataset.c; saveBinder(b); route(true); };
+  el.querySelector('#bvMode').onclick=e=>{ const t=e.target.closest('[data-m]'); if(!t) return; bvMode=t.dataset.m; const y=window.scrollY; route(true); window.scrollTo(0,y); };
+  const bf=el.querySelector('#bvFilt'); if(bf) bf.onclick=e=>{ const t=e.target.closest('[data-f]'); if(!t) return; bvFilt=t.dataset.f; const y=window.scrollY; route(true); window.scrollTo(0,y); };
+  el.querySelectorAll('tr[data-pk]').forEach(tr=>tr.onclick=()=>{ const [sid,key]=tr.dataset.pk.split('|'); pocketModal(b,sid,key); });
   el.querySelector('#bvCopies').onclick=e=>{ const t=e.target.closest('[data-n]'); if(!t||readOnly) return; b.copies=+t.dataset.n; saveBinder(b); route(true); };
   el.querySelectorAll('.pocket[data-pk]').forEach(pk=>pk.onclick=()=>{ const [sid,key]=pk.dataset.pk.split('|'); pocketModal(b,sid,key); });
 }
