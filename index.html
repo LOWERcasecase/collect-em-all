@@ -73,6 +73,12 @@ button{font:inherit}
 .covers{display:flex;gap:22px;align-items:flex-end;flex-wrap:wrap;margin:6px 0 14px}
 .covers figure{margin:0;text-align:center}
 .covers figcaption{font-size:12px;color:#555;margin-top:4px;font-weight:600}
+.vb{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 5px;border-radius:4px;margin:0 1px;background:#eee;color:#bbb;border:1px solid #ddd}
+.vb.on{background:#2e8b3b;color:#fff;border-color:#2e8b3b}
+.vb.sp.on{background:linear-gradient(90deg,#8e6fd8,#4fb3d9,#7fd08a);border-color:#6f8fd8}
+.stps{display:flex;gap:6px;flex-wrap:wrap}
+.stp{display:flex;flex-direction:column;align-items:center;gap:1px}
+.stp .sl{font-size:10px;color:#777}
 .shelf-sets{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
 details.cards>summary{cursor:pointer;font-weight:600;color:var(--link);margin:6px 0}
 #content{flex:1;min-width:0;background:#fff;border:1px solid var(--border);border-radius:0 12px 12px 12px;padding:18px 26px 30px;box-shadow:0 2px 12px rgba(0,0,0,.18)}
@@ -284,11 +290,17 @@ let db=null, user=null, readOnly=false, mode='local';
 const dirty = {}; const writing = {}; const timers = {};
 const LS = 'collectapedia.v1';
 const LI={binder:0,bulk:1,other:2};
-function qn(e){ return e? (e[0]||0)+(e[1]||0)+(e[2]||0) : 0; }
-function locsOf(e){ return e? LOCS.filter(([k])=>e[LI[k]]>0) : []; }
+// Each card: [regular in binder, regular in bulk, (unused), reverse holo/2nd copy in binder, reverse holo/2nd copy in bulk]
+const IX={r:{binder:0,bulk:1}, s:{binder:3,bulk:4}};
+function regN(e){ return e? (e[0]||0)+(e[1]||0) : 0; }
+function spN(e){ return e? (e[3]||0)+(e[4]||0) : 0; }
+function qn(e){ return e? regN(e)+spN(e)+(e[2]||0) : 0; }
+function locN(e,k){ return e? (e[IX.r[k]]||0)+(e[IX.s[k]]||0) : 0; }
+function locsOf(e){ return e? LOCS.filter(([k])=>locN(e,k)>0) : []; }
 // old format [qty,'loc'] -> new [binder,bulk,other]
 function normLoc(c){ for(const k in c){ const e=c[k]; if(!e) continue; if(typeof e[1]==='string'){ const n=[0,0,0]; const l=e[1]==='binder'?'binder':'bulk'; n[LI[l]]=e[0]||0; c[k]=n; }
-    if(c[k][2]){ c[k][1]=(c[k][1]||0)+c[k][2]; c[k][2]=0; } if(!qn(c[k])) delete c[k]; } return c; }
+    if(c[k][2]){ c[k][1]=(c[k][1]||0)+c[k][2]; c[k][2]=0; }
+    if(c[k].length<5){ const b=c[k][0]||0, u=c[k][1]||0; const rB=b>0?1:0, rK=rB?0:(u>0?1:0); c[k]=[rB,rK,0,b-rB,u-rK]; } if(!qn(c[k])) delete c[k]; } return c; }
 function lsLoad(){try{const j=JSON.parse(localStorage.getItem(LS)||'null');if(j){S.owned=j.owned||{}; Object.values(S.owned).forEach(normLoc);S.binders=j.binders||{};S.config=j.config||{};S.images=j.images||{};}}catch(e){}}
 function lsSave(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}}
 
@@ -393,13 +405,14 @@ function compHTML(got,need){ const p=need?got*100/need:0; const t=need?(p>0&&p<0
 function pctTxt(a,b){ if(!b) return '0'; const p=a*100/b; return p>0&&p<0.1?'<0.1':String(Math.floor(p*10)/10); }
 function barRow(label,a,b,color){ const p=b?Math.min(100,a*100/b):0; return `<div class="prog" style="margin:2px 0" title="${label}: ${a} of ${b}"><span class="blab" style="width:52px;font-size:11px;color:#555">${label}</span><div class="bar"><i style="width:${p}%;${color?`background:${color}`:''}"></i></div><span class="nw" style="text-align:right"><span class="hide-m">${a}/${b} · </span><b>${pctTxt(a,b)}%</b></span></div>`; }
 const SPECIAL_BAR='linear-gradient(90deg,#8e6fd8,#4fb3d9,#7fd08a)';
-function dualHTML(st){ return barRow('Regular',st.have,st.total)+barRow('Special',st.full,st.total,SPECIAL_BAR); }
+function dualHTML(st){ return barRow('Regular',st.reg,st.total)+barRow('Special',st.full,st.total,SPECIAL_BAR); }
 function setStats(setId){
   const o=ownedOf(setId), cards=T.cards[setId]||[]; let have=0, copies=0; const byLoc={binder:0,bulk:0,other:0}, copiesByLoc={binder:0,bulk:0,other:0};
-  for(const r of cards){const e=o[r[0]]; const q=qn(e); if(q>0){have++;copies+=q; for(const [k] of LOCS){ const n=e[LI[k]]||0; if(n){ byLoc[k]++; copiesByLoc[k]+=n; } } }}
+  let reg=0;
+  for(const r of cards){const e=o[r[0]]; const q=qn(e); if(q>0){have++;copies+=q; if(regN(e)>0) reg++; for(const [k] of LOCS){ const n=locN(e,k); if(n){ byLoc[k]++; copiesByLoc[k]+=n; } } }}
   let main=0; for(const r of cards){ if(isMainNum(r[1],SETS[setId].printed)){const e=o[r[0]]; if(qn(e)>0) main++;} }
-  const G=GOAL(); let got=0, full=0; for(const r of cards){ const q=qn(o[r[0]]); got+=Math.min(q,G); if(q>=G) full++; }
-  return {have,copies,total:cards.length,byLoc,copiesByLoc,main,got,need:cards.length*G,full};
+  let full=0; for(const r of cards){ if(spN(o[r[0]])>0) full++; }
+  return {have,reg,copies,total:cards.length,byLoc,copiesByLoc,main,got:reg+full,need:cards.length*2,full};
 }
 function isMainNum(num,printed){const n=parseInt(num,10); return /^\d+$/.test(num) && n>=1 && n<=printed;}
 function bindersForSet(setId){return Object.values(S.binders).filter(b=>(b.sets||[]).includes(setId));}
@@ -411,7 +424,8 @@ function binderSlots(b){
   (b.sets||[]).filter(id=>SETS[id]).forEach(id=>{ const s=SETS[id]; T.cards[id].forEach(r=>{ const n=cardSlotCount(b,id,r); for(let v=0;v<n;v++) out.push({s,r,v,n,vname: n>1? (isMainNum(r[1],s.printed)? (names[v]||('Copy '+(v+1))) : 'Copy '+(v+1)) : ''}); }); });
   return out;
 }
-function slotHave(b,x){ const e=ownedOf(x.s.id)[x.r[0]]; const c = b.colorBy==='owned'? qn(e) : (e?e[0]:0); return x.v < c; }
+function slotHave(b,x){ const e=ownedOf(x.s.id)[x.r[0]]; if(!e) return false; const own=b.colorBy==='owned';
+  if(x.v===0) return own? regN(e)>0 : (e[0]||0)>0; return (own? spN(e) : (e[3]||0)) > x.v-1; }
 function binderCalc(b){
   const per=(+b.pockets||9)*((b.sides??2)==2?2:1);
   const sets=(b.sets||[]).filter(id=>SETS[id]);
@@ -484,8 +498,8 @@ document.getElementById('search').addEventListener('submit',e=>{e.preventDefault
 
 function countHTML(t){
   return `<div class="stat" style="font-size:28px">${t.copies.toLocaleString()}</div><div>cards in total</div>
-  <div style="margin-top:4px"><b>${t.have.toLocaleString()}</b> unique cards <span style="color:#777">(regular set)</span></div>
-  <div style="margin-top:2px"><b>${t.full.toLocaleString()}</b> special <span style="color:#777">(2nd copies)</span></div>
+  <div style="margin-top:4px"><b>${t.have.toLocaleString()}</b> unique cards</div>
+  <div style="margin-top:2px"><b>${t.reg.toLocaleString()}</b> regular · <b>${t.full.toLocaleString()}</b> reverse holo / 2nd</div>
   <div style="margin-top:4px;line-height:1.5">${t.started} sets started · ${t.complete} regular / ${t.specialComplete} special complete</div>
   <table style="width:100%;margin-top:6px;border-spacing:0 3px;font-size:12px"><tr style="color:#777;font-size:11px"><td></td><td style="text-align:right">total</td><td style="text-align:right">unique</td></tr>${LOCS.map(([k,n])=>`<tr><td><span class="loc loc-${k}">${n}</span></td><td style="text-align:right"><b>${(t.copiesByLoc[k]||0).toLocaleString()}</b></td><td style="text-align:right">${(t.byLoc[k]||0).toLocaleString()}</td></tr>`).join('')}</table>`;
 }
@@ -498,21 +512,21 @@ function renderSide(){
 
 /* ================= VIEWS ================= */
 function totals(){
-  let have=0,total=0,copies=0,got=0,need=0,full=0; const byLoc={binder:0,bulk:0,other:0}, copiesByLoc={binder:0,bulk:0,other:0}; let started=0, complete=0, specialComplete=0;
-  T.sets.forEach(s=>{const st=setStats(s.id); have+=st.have; total+=st.total; copies+=st.copies; got+=st.got; need+=st.need; full+=st.full; for(const k in st.byLoc){ byLoc[k]=(byLoc[k]||0)+st.byLoc[k]; copiesByLoc[k]=(copiesByLoc[k]||0)+st.copiesByLoc[k]; } if(st.have) started++; if(st.have&&st.have>=st.total) complete++; if(st.total&&st.full>=st.total) specialComplete++;});
-  return {have,total,copies,got,need,full,byLoc,copiesByLoc,started,complete,specialComplete};
+  let have=0,reg=0,total=0,copies=0,got=0,need=0,full=0; const byLoc={binder:0,bulk:0,other:0}, copiesByLoc={binder:0,bulk:0,other:0}; let started=0, complete=0, specialComplete=0;
+  T.sets.forEach(s=>{const st=setStats(s.id); have+=st.have; reg+=st.reg; total+=st.total; copies+=st.copies; got+=st.got; need+=st.need; full+=st.full; for(const k in st.byLoc){ byLoc[k]=(byLoc[k]||0)+st.byLoc[k]; copiesByLoc[k]=(copiesByLoc[k]||0)+st.copiesByLoc[k]; } if(st.have) started++; if(st.reg&&st.reg>=st.total) complete++; if(st.total&&st.full>=st.total) specialComplete++;});
+  return {have,reg,total,copies,got,need,full,byLoc,copiesByLoc,started,complete,specialComplete};
 }
 function viewHome(el){
   const t=totals();
   const recent=[...T.sets].filter(s=>s.release<=TODAY).sort((a,b)=>b.release.localeCompare(a.release)).slice(0,6);
   const upcoming=[...T.sets].filter(s=>s.release>TODAY).sort((a,b)=>a.release.localeCompare(b.release));
-  const startedSets=T.sets.map(s=>({s,st:setStats(s.id)})).filter(x=>x.st.have).sort((a,b)=>(b.st.have/b.st.total-a.st.have/a.st.total)||(b.st.full/b.st.total-a.st.full/a.st.total)).slice(0,8);
+  const startedSets=T.sets.map(s=>({s,st:setStats(s.id)})).filter(x=>x.st.have).sort((a,b)=>(b.st.reg/b.st.total-a.st.reg/a.st.total)||(b.st.full/b.st.total-a.st.full/a.st.total)).slice(0,8);
   const bs=Object.values(S.binders); const todo=bs.map(b=>({b,st:binderStatus(b)})).filter(x=>!x.st.ready);
   el.innerHTML=`
   <h1 class="ft">Main page</h1><div class="sub">From ${esc(S.config.title||'My Collectapedia')}, your personal card encyclopedia</div>
   <div class="mainbox"><b>Welcome!</b> This wiki tracks every English expansion (${T.sets.length} sets, ${t.total.toLocaleString()} cards). Open any expansion to tick off the cards you own and record where each one lives: a binder, or the bulk box. Use the <a data-go="binders">Binder workshop</a> to plan binders, pages and labels.</div>
   <div class="grid">
-    <div class="box"><h4>Collection at a glance</h4><div class="in"><div class="check"><span class="lbl">Total cards</span><b class="stat" style="font-size:22px">${t.copies.toLocaleString()}</b></div><div class="check"><span class="lbl">Unique cards <span style="font-weight:400;color:#777">(regular set)</span></span><b class="stat" style="font-size:22px">${t.have.toLocaleString()}</b></div><div class="check"><span class="lbl">Special cards <span style="font-weight:400;color:#777">(reverse holo / 2nd copy)</span></span><b class="stat" style="font-size:22px">${t.full.toLocaleString()}</b></div><div style="margin-top:6px;font-size:12.5px">${t.started} sets started · <b>${t.complete}</b> regular sets complete · <b>${t.specialComplete}</b> special sets complete</div></div></div>
+    <div class="box"><h4>Collection at a glance</h4><div class="in"><div class="check"><span class="lbl">Total cards</span><b class="stat" style="font-size:22px">${t.copies.toLocaleString()}</b></div><div class="check"><span class="lbl">Regular cards</span><b class="stat" style="font-size:22px">${t.reg.toLocaleString()}</b></div><div class="check"><span class="lbl">Unique cards</span><b class="stat" style="font-size:22px">${t.have.toLocaleString()}</b></div><div class="check"><span class="lbl">Special cards <span style="font-weight:400;color:#777">(reverse holo / 2nd copy)</span></span><b class="stat" style="font-size:22px">${t.full.toLocaleString()}</b></div><div style="margin-top:6px;font-size:12.5px">${t.started} sets started · <b>${t.complete}</b> regular sets complete · <b>${t.specialComplete}</b> special sets complete</div></div></div>
     <div class="box"><h4>Where your cards are</h4><div class="in"><div class="check" style="font-size:11.5px;color:#777"><span class="lbl"></span><span style="width:60px;text-align:right">total</span><span style="width:70px;text-align:right">unique</span></div>${LOCS.map(([k,n])=>`<div class="check"><span class="loc loc-${k}">${n}</span><span class="lbl"></span><b style="width:60px;text-align:right">${(t.copiesByLoc[k]||0).toLocaleString()}</b><span style="width:70px;text-align:right">${(t.byLoc[k]||0).toLocaleString()}</span></div>`).join('')}<div style="margin-top:6px"><a data-go="find">Find a card →</a></div></div></div>
     <div class="box"><h4>Binder to-do</h4><div class="in">${!bs.length?'No binders planned yet. <a data-go="binders">Plan one →</a>': !todo.length?'<span class="tag ok">All binders ready</span>': todo.map(x=>`<div style="margin-bottom:4px"><b>${esc(x.b.name)}</b>: ${x.st.todo.map(esc).join(', ')}</div>`).join('')}</div></div>
   </div>
@@ -576,7 +590,8 @@ function viewSet(el,id,soft){
       ${s.subs.length?`<tr><th>Subsets</th><td>${s.subs.map(x=>esc(x[0])+' ('+x[1]+')').join('<br>')}</td></tr>`:''}
       <tr><th>Legal in</th><td>${s.legal.map(x=>x[0].toUpperCase()+x.slice(1)).join(', ')||'—'}</td></tr>
       <tr><th>Total cards</th><td><b>${st.copies}</b></td></tr>
-      <tr><th>Regular set</th><td><b>${st.have}</b> of ${st.total} · <b>${pctTxt(st.have,st.total)}%</b><div class="prog"><div class="bar"><i style="width:${st.total?st.have*100/st.total:0}%"></i></div></div><div style="font-size:11.5px;color:#555">${st.main}/${s.printed} of the main set</div></td></tr>
+      <tr><th>Unique cards</th><td><b>${st.have}</b> of ${st.total}</td></tr>
+      <tr><th>Regular set</th><td><b>${st.reg}</b> of ${st.total} · <b>${pctTxt(st.reg,st.total)}%</b><div class="prog"><div class="bar"><i style="width:${st.total?st.reg*100/st.total:0}%"></i></div></div><div style="font-size:11.5px;color:#555">${st.main}/${s.printed} of the main set</div></td></tr>
       <tr><th>Special set</th><td><b>${st.full}</b> of ${st.total} · <b>${pctTxt(st.full,st.total)}%</b><div class="prog"><div class="bar"><i style="width:${st.total?st.full*100/st.total:0}%;background:${SPECIAL_BAR}"></i></div></div><div style="font-size:11.5px;color:#555">reverse holos / holos / 2nd copies</div></td></tr>
       <tr><th>Binder</th><td>${bs.length? bs.map(b=>`<a data-binder="${b.id}">${esc(b.name)}</a>`).join('<br>') : `<a class="rw" id="mkBinder">Plan a binder</a><span class="ro-only"></span>`}</td></tr>
     </table>
@@ -588,7 +603,7 @@ function viewSet(el,id,soft){
   <h1 class="ft">${esc(s.name)} (TCG)</h1>
   <div class="sub">From ${esc(S.config.title||'My Collectapedia')} · <a data-go="expansions">List of expansions</a></div>
   <p><b>${esc(s.name)}</b> ${s.code?`(<i>${esc(s.code)}</i>) `:''}is ${ordinal} of the Pokémon Trading Card Game. It ${s.release>TODAY?'releases':'was released'} on ${fmtDate(s.release)}. The set has ${s.printed} numbered cards${extra?`, plus ${extra} secret rares and extra cards for ${cards.length} in total`:''}${s.subs.length?`, including the ${s.subs.map(x=>esc(x[0])).join(' and ')} subset${s.subs.length>1?'s':''}`:''}.</p>
-  <p>You have <b>${st.copies}</b> card${st.copies===1?'':'s'} from this set: <b>${st.have}</b> of its ${cards.length} unique cards. <b>Regular set:</b> ${st.have} of ${cards.length} (${pctTxt(st.have,cards.length)}%). <b>Special set</b> (reverse holos, holos and 2nd copies): ${st.full} of ${cards.length} (${pctTxt(st.full,cards.length)}%).${st.have?` Where they are: `+LOCS.filter(([k])=>st.copiesByLoc[k]).map(([k,n])=>`<span class="loc loc-${k}">${n}</span> ${st.copiesByLoc[k]} cop${st.copiesByLoc[k]===1?'y':'ies'} (${st.byLoc[k]} unique)`).join(' &nbsp; ') : ''}</p>
+  <p>You have <b>${st.copies}</b> card${st.copies===1?'':'s'} from this set: <b>${st.have}</b> of its ${cards.length} unique cards. <b>Regular set:</b> ${st.reg} of ${cards.length} (${pctTxt(st.reg,cards.length)}%). <b>Special set</b> (reverse holos, holos and 2nd copies): ${st.full} of ${cards.length} (${pctTxt(st.full,cards.length)}%).${st.have?` Where they are: `+LOCS.filter(([k])=>st.copiesByLoc[k]).map(([k,n])=>`<span class="loc loc-${k}">${n}</span> ${st.copiesByLoc[k]} cop${st.copiesByLoc[k]===1?'y':'ies'} (${st.byLoc[k]} unique)`).join(' &nbsp; ') : ''}</p>
   ${bs.length? bs.map(b=>{const x=binderStatus(b);return `<p class="hat">Binder: <b>${esc(b.name)}</b> ${x.ready?'<span class="tag ok">ready</span>':`<span class="tag warn">to do: ${esc(x.todo.join(', '))}</span>`} · ${x.c.inBinder} of this set's cards marked as in the binder.</p>`;}).join(''):''}
   <h2>Rarity breakdown</h2>
   <div class="roundy" style="${styleVars(s.series)};display:inline-block;min-width:320px"><table><tr><th>Rarity</th><th>In set</th><th>Owned</th></tr>
@@ -596,14 +611,14 @@ function viewSet(el,id,soft){
   <div style="clear:both"></div>
   <h2>Set list</h2>
   <div class="toolbar">
-    <div class="grp" id="fseg">${[['all','All'],['missing','Missing'],['owned','Have regular'],['need','Need special'],['done','Have special'],['binder','In binder'],['bulk','In bulk']].map(([k,n])=>`<button class="seg ${setFilter===k?'on':''}" data-f="${k}">${n}</button>`).join('')}</div>
+    <div class="grp" id="fseg">${[['all','All'],['missing','Missing'],['needreg','Need regular'],['need','Need reverse holo'],['done','Have both'],['binder','In binder'],['bulk','In bulk']].map(([k,n])=>`<button class="seg ${setFilter===k?'on':''}" data-f="${k}">${n}</button>`).join('')}</div>
     <input type="search" id="cardq" placeholder="Filter by name, number or artist" value="${esc(setQuery)}" style="width:220px">
     <div class="grp" id="vseg"><button class="seg ${setLayout==='list'?'on':''}" data-v="list">☰ List</button><button class="seg ${setLayout==='gallery'?'on':''}" data-v="gallery">▦ Gallery</button></div>
     <span class="rw"><label class="btn" style="cursor:pointer" title="Pick many card pictures at once. Name each file after the card number, e.g. 001.jpg or 25.png">📷 Upload card pictures…<input type="file" id="multiUp" accept="image/*" multiple hidden></label></span>
-    <span class="rw" style="margin-left:auto"><select id="bulkAct"><option value="">Bulk actions…</option>${LOCS.map(([k,n])=>`<option value="add-${k}">Add 1 of each missing card shown → ${n}</option>`).join('')}${LOCS.map(([k,n])=>`<option value="mv-${k}">Move every copy shown → ${n}</option>`).join('')}<option value="clear">Clear all shown</option></select></span>
+    <span class="rw" style="margin-left:auto"><select id="bulkAct"><option value="">Bulk actions…</option>${LOCS.map(([k,n])=>`<option value="add-r-${k}">Add the regular of each card shown → ${n}</option>`).join('')}${LOCS.map(([k,n])=>`<option value="add-s-${k}">Add the reverse holo of each card shown → ${n}</option>`).join('')}${LOCS.map(([k,n])=>`<option value="mv-${k}">Move every copy shown → ${n}</option>`).join('')}<option value="clear">Clear all shown</option></select></span>
   </div>
   <div class="roundy" style="${styleVars(s.series)}"><div class="cap">${esc(s.name)} set list</div><table id="setTable" style="${setLayout==='gallery'?'display:none':''}">
-    <tr><th>No.</th><th>Card name</th><th class="hide-m">Type</th><th>Rarity</th><th>Have</th><th>Binder</th><th>Bulk</th></tr>
+    <tr><th>No.</th><th>Card name</th><th class="hide-m">Type</th><th>Rarity</th><th>Have</th><th>Regular</th><th>Reverse holo / 2nd</th></tr>
     <tbody id="setRows"></tbody>
   </table><div id="gallery" class="gallery" style="${setLayout==='gallery'?'':'display:none'}"></div></div>`;
   renderSetRows(id);
@@ -616,7 +631,7 @@ function viewSet(el,id,soft){
   el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ if(!confirmInline('Remove this picture?')) return; removeImage(id,b.dataset.rm,null).then(()=>route(true)); });
   el.querySelector('#gallery').addEventListener('click',e=>{const c=e.target.closest('[data-card]'); if(c) cardModal(id,c.dataset.card);});
   const mk=el.querySelector('#mkBinder'); if(mk) mk.onclick=()=>editBinder(null,[id]);
-  el.querySelector('#setRows').addEventListener('click',e=>{const b=e.target.closest('button[data-q]'); if(!b||readOnly) return; changeQty(id,b.closest('tr').dataset.k,b.dataset.l,+b.dataset.q);});
+  el.querySelector('#setRows').addEventListener('click',e=>{const b=e.target.closest('button[data-q]'); if(!b||readOnly) return; changeQty(id,b.closest('tr').dataset.k,b.dataset.l,+b.dataset.q,b.dataset.v);});
   el.querySelector('#setRows').addEventListener('click',e=>{const c=e.target.closest('[data-card]'); if(c) cardModal(id,c.dataset.card);});
 }
 function ordinalStr(n){const s=['th','st','nd','rd'],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);}
@@ -624,13 +639,15 @@ function visibleRows(id){
   const cards=T.cards[id], o=ownedOf(id), q=setQuery.trim().toLowerCase();
   return cards.filter(r=>{const e=o[r[0]]; const has=qn(e)>0;
     if(setFilter==='missing'&&has) return false;
-    if(setFilter==='need'&&(qn(e)>=GOAL()||!qn(e))) return false;
-    if(setFilter==='done'&&qn(e)<GOAL()) return false;
-    if(setFilter==='owned'&&!has) return false;
-    if(['binder','bulk'].includes(setFilter)&&!(has&&e[LI[setFilter]]>0)) return false;
+    if(setFilter==='needreg'&&regN(e)>0) return false;
+    if(setFilter==='need'&&spN(e)>0) return false;
+    if(setFilter==='done'&&!(regN(e)>0&&spN(e)>0)) return false;
+    if(['binder','bulk'].includes(setFilter)&&!(locN(e,setFilter)>0)) return false;
     if(q && !(r[2].toLowerCase().includes(q) || r[1].toLowerCase()===q || (r[7]||'').toLowerCase().includes(q))) return false;
     return true;});
 }
+function haveBadges(e){ const q=qn(e); return `<span class="vb ${regN(e)?'on':''}" title="Regular">R</span><span class="vb sp ${spN(e)?'on':''}" title="Reverse holo / 2nd copy">RH</span>${q?`<div style="font-size:11px;color:#666">${q} total</div>`:''}`; }
+function steppers(e,v,attr){ attr=attr||'l'; return `<div class="stps">${LOCS.map(([k,n])=>{ const c=e?(e[IX[v][k]]||0):0; return `<div class="stp"><span class="sl">${n}</span><span class="qty qloc-${k} ${c?'':'zero'}"><button class="rw" data-${attr}="${k}" data-v="${v}" data-q="-1" title="Remove one">−</button><span>${c}</span><button class="rw" data-${attr}="${k}" data-v="${v}" data-q="1" title="Add one">+</button></span></div>`; }).join('')}</div>`; }
 function rowHTML(id,r){
   const s=SETS[id]; const e=ownedOf(id)[r[0]]; const q=qn(e);
   const num = isMainNum(r[1],s.printed)? `${r[1].padStart(3,'0')}/${String(s.printed).padStart(3,'0')}` : r[1];
@@ -639,8 +656,8 @@ function rowHTML(id,r){
     <td><div style="display:flex;align-items:center;gap:8px">${imgTag(id,'card',r[0],'height:42px;border-radius:3px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.3)',`data-card="${esc(r[0])}"`)}<div><a data-card="${esc(r[0])}"><b>${esc(r[2])}</b></a>${r[7]?`<div style="font-size:11px;color:#888" class="hide-m">Illus. ${esc(r[7])}</div>`:''}</div></div></td>
     <td class="hide-m nw">${sup==='Pokémon'? typeDot(ty)+esc(ty) : esc(sup)}${sub?`<div style="font-size:11px;color:#777">${esc(sub)}</div>`:''}</td>
     <td style="font-size:12px">${esc(T.rar[r[3]]||'—')}</td>
-    <td class="c" style="font-weight:700;${q>=GOAL()?'color:#2e7d32':q?'color:#b7791f':'color:#bbb'}" title="${q>=2?'Regular and special done':q?'Regular done, special still needed':'Missing'}">${q}${q>=2?' ✓✓':q?' ✓':''}</td>
-    ${LOCS.map(([k,n])=>{const v=e?(e[LI[k]]||0):0; return `<td class="c"><span class="qty qloc-${k} ${v?'':'zero'}" title="${n}"><button class="rw" data-l="${k}" data-q="-1" title="Remove one from ${n}">−</button><span>${v}</span><button class="rw" data-l="${k}" data-q="1" title="Add one to ${n}">+</button></span></td>`;}).join('')}</tr>`;
+    <td class="c nw">${haveBadges(e)}</td>
+    <td>${steppers(e,'r')}</td><td>${steppers(e,'s')}</td></tr>`;
 }
 function renderSetRows(id){
   const rows=visibleRows(id); const tb=document.getElementById('setRows'); if(!tb) return;
@@ -659,9 +676,9 @@ function updateRow(id,k){
   const tr=document.querySelector(`#setRows tr[data-k="${CSS.escape(k)}"]`); const r=T.cards[id].find(x=>x[0]===k);
   if(tr&&r){ const t=document.createElement('tbody'); t.innerHTML=rowHTML(id,r); tr.replaceWith(t.firstElementChild); }
 }
-function changeQty(id,k,loc,d){
+function changeQty(id,k,loc,d,variant){
   const o=S.owned[id]||(S.owned[id]={});
-  const e=o[k]||[0,0,0]; const i=LI[loc];
+  const e=o[k]||[0,0,0,0,0]; while(e.length<5) e.push(0); const i=IX[variant==='s'?'s':'r'][loc];
   e[i]=Math.max(0,Math.min(999,(e[i]||0)+d));
   if(!qn(e)) delete o[k]; else o[k]=e;
   saveSet(id); updateRow(id,k); refreshSetHeader(id);
@@ -670,9 +687,9 @@ function refreshSetHeader(id){ clearTimeout(refreshSetHeader._t); refreshSetHead
 function bulkAction(id,v){
   if(readOnly) return;
   const rows=visibleRows(id); const o=S.owned[id]||(S.owned[id]={});
-  if(v.startsWith('add-')){ const i=LI[v.slice(4)]; rows.forEach(r=>{ if(!qn(o[r[0]])){ const e=[0,0,0]; e[i]=1; o[r[0]]=e; } }); }
+  if(v.startsWith('add-')){ const [,vr,lc]=v.split('-'); const i=IX[vr][lc]; const has=vr==='r'?regN:spN; rows.forEach(r=>{ const e=o[r[0]]||[0,0,0,0,0]; if(!has(e)){ e[i]=1; o[r[0]]=e; } }); }
   else if(v==='clear'){ if(!confirmInline(`Clear ${rows.length} cards?`)) return; rows.forEach(r=>delete o[r[0]]); }
-  else if(v.startsWith('mv-')){ const i=LI[v.slice(3)]; rows.forEach(r=>{ const e=o[r[0]]; if(qn(e)){ const t=qn(e); const n=[0,0,0]; n[i]=t; o[r[0]]=n; } }); }
+  else if(v.startsWith('mv-')){ const lc=v.slice(3); rows.forEach(r=>{ const e=o[r[0]]; if(qn(e)){ const n=[0,0,0,0,0]; n[IX.r[lc]]=regN(e); n[IX.s[lc]]=spN(e); o[r[0]]=n; } }); }
   saveSet(id); route(true); toast('Updated '+rows.length+' cards');
 }
 let confirmArmed=null;
@@ -695,9 +712,9 @@ function viewSearch(el){
 }
 function cardTable(list){
   return `<div class="roundy"><table><tr><th>Card</th><th>Expansion</th><th>No.</th><th class="hide-m">Rarity</th><th>Have</th><th>Where</th></tr>
-  ${list.map(([s,r])=>{const e=ownedOf(s.id)[r[0]]; const bs=e&&e[0]>0?bindersForSet(s.id):[];
+  ${list.map(([s,r])=>{const e=ownedOf(s.id)[r[0]]; const bs=locN(e,'binder')>0?bindersForSet(s.id):[];
    return `<tr class="${e?'have':''}"><td><b>${esc(r[2])}</b></td><td><a data-set="${s.id}">${esc(s.name)}</a></td><td class="c">${esc(r[1])}</td><td class="hide-m" style="font-size:12px">${esc(T.rar[r[3]]||'')}</td><td class="c">${e?qn(e):'<span style="color:#bbb">0</span>'}</td>
-   <td>${e?locsOf(e).map(([k,n])=>`<span class="loc loc-${k}">${n} ×${e[LI[k]]}</span>`).join(' ')+(bs.length?' <span style="font-size:12px">'+bs.map(b=>esc(b.name)).join(', ')+'</span>':''):'<span style="color:#bbb">—</span>'}</td></tr>`;}).join('')}</table></div>`;
+   <td>${e?locsOf(e).map(([k,n])=>`<span class="loc loc-${k}">${n} ×${locN(e,k)}</span>`).join(' ')+(bs.length?' <span style="font-size:12px">'+bs.map(b=>esc(b.name)).join(', ')+'</span>':''):'<span style="color:#bbb">—</span>'}</td></tr>`;}).join('')}</table></div>`;
 }
 
 /* ---------- Find a card ---------- */
@@ -710,7 +727,7 @@ function viewFind(el){
   <div id="fres"></div>`;
   const run=()=>{
     const q=findQ.trim().toLowerCase(); const out=[];
-    for(const s of T.sets){ const o=S.owned[s.id]; if(!o) continue; for(const r of T.cards[s.id]){ const e=o[r[0]]; if(!qn(e)) continue; if(findLoc!=='all'&&!(e[LI[findLoc]]>0)) continue; if(q&&!r[2].toLowerCase().includes(q)) continue; out.push([s,r]); if(out.length>=600) break; } if(out.length>=600) break; }
+    for(const s of T.sets){ const o=S.owned[s.id]; if(!o) continue; for(const r of T.cards[s.id]){ const e=o[r[0]]; if(!qn(e)) continue; if(findLoc!=='all'&&!(locN(e,findLoc)>0)) continue; if(q&&!r[2].toLowerCase().includes(q)) continue; out.push([s,r]); if(out.length>=600) break; } if(out.length>=600) break; }
     document.getElementById('fres').innerHTML = out.length? `<p>${out.length>=600?'Showing the first 600 matches.':out.length+' card'+(out.length>1?'s':'')+' found.'}</p>`+cardTable(out) : `<p>${t.have?'Nothing you own matches.':'You haven\'t marked any cards as owned yet. Open an <a data-go="expansions">expansion</a> to start.'}</p>`;
   };
   el.querySelector('#fq').oninput=e=>{findQ=e.target.value; run();};
@@ -721,8 +738,9 @@ function viewFind(el){
 /* ---------- Binder view (book) ---------- */
 let bvMode='pages', bvFilt='all';
 // Status of one pocket: in the binder, in bulk (so it can be moved into the binder), or missing
-function pocketStatus(x){ const e=ownedOf(x.s.id)[x.r[0]]; const inB=e?(e[0]||0):0, inK=e?(e[1]||0):0;
-  if(x.v<inB) return 'done'; if(x.v<inB+inK) return 'pull'; return 'missing'; }
+function pocketStatus(x){ const e=ownedOf(x.s.id)[x.r[0]]; if(!e) return 'missing';
+  if(x.v===0){ if(e[0]>0) return 'done'; if(e[1]>0) return 'pull'; return 'missing'; }
+  const i=x.v-1; if((e[3]||0)>i) return 'done'; if((e[3]||0)+(e[4]||0)>i) return 'pull'; return 'missing'; }
 function binderListHTML(b,slots,pockets,both,ser){
   if(!slots.length) return '<p>This binder has no expansions yet.</p>';
   const per=pockets*(both?2:1); let rows=[], counts={done:0,pull:0,missing:0};
@@ -786,13 +804,13 @@ function pocketModal(b,setId,key){
       <div style="flex:1;min-width:220px">
         <div style="font-size:16px;font-weight:700">${esc(r[2])}</div><div style="color:#666;font-size:12.5px;margin-bottom:10px">${esc(s.name)} · ${esc(r[1])} · ${esc(T.rar[r[3]]||'')}</div>
         <div style="font-weight:600;margin-bottom:4px">My copies</div>
-        <table style="border-spacing:0 4px">${LOCS.map(([k,nm])=>{const v=e?(e[LI[k]]||0):0; return `<tr><td style="padding-right:10px"><span class="loc loc-${k}">${nm}</span></td><td><span class="qty qloc-${k} ${v?'':'zero'}"><button class="rw" data-pl="${k}" data-pq="-1">−</button><span>${v}</span><button class="rw" data-pl="${k}" data-pq="1">+</button></span></td></tr>`;}).join('')}</table>
+        <div style="display:flex;gap:18px;flex-wrap:wrap"><div><div style="font-size:12px;color:#555;margin-bottom:2px">Regular</div>${steppers(e,'r','pl')}</div><div><div style="font-size:12px;color:#555;margin-bottom:2px">Reverse holo / 2nd copy</div>${steppers(e,'s','pl')}</div></div>
         <div style="font-weight:600;margin:12px 0 4px">Pockets for this card in “${esc(b.name)}”</div>
         <div class="grp rw" style="display:flex">${[['auto','Default'],[0,'0'],[1,'1'],[2,'2'],[3,'3']].map(([k,nm])=>`<button class="seg ${(k==='auto'?ov==null:ov===k)?'on':''}" data-ov="${k}">${nm}</button>`).join('')}</div>
         <div style="font-size:11.5px;color:#666;margin-top:4px">Currently ${n} pocket${n===1?'':'s'}. Use 1 if this card only comes in one version, or 0 to leave it out.</div>
       </div></div>`;
     openModal('Pocket · '+r[2], body, [mkBtn('Open expansion','',()=>{ document.getElementById('modal').classList.remove('show'); go('set-'+setId); }), mkBtn('Done','pri',closeModal)]);
-    document.querySelectorAll('#mBody [data-pq]').forEach(x=>x.onclick=()=>{ if(readOnly) return; changeQty(setId,key,x.dataset.pl,+x.dataset.pq); render(); });
+    document.querySelectorAll('#mBody [data-pl]').forEach(x=>x.onclick=()=>{ if(readOnly) return; changeQty(setId,key,x.dataset.pl,+x.dataset.q,x.dataset.v); render(); });
     document.querySelectorAll('#mBody [data-ov]').forEach(x=>x.onclick=()=>{ if(readOnly) return; b.slotOv=b.slotOv||{}; const k=setId+'|'+key; if(x.dataset.ov==='auto') delete b.slotOv[k]; else b.slotOv[k]=+x.dataset.ov; saveBinder(b); render(); });
   };
   render();
@@ -802,7 +820,7 @@ function pocketModal(b,setId,key){
 let shelfShow={};
 function viewShelf(el){
   const bs=Object.values(S.binders).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  const totIn=bs.reduce((n,b)=>n+binderCards(b).inb.reduce((m,x)=>m+x.e[0],0),0);
+  const totIn=bs.reduce((n,b)=>n+binderCards(b).inb.reduce((m,x)=>m+locN(x.e,'binder'),0),0);
   el.innerHTML=`<h1 class="ft">My binders</h1><div class="sub">What binders you have and what's inside each one</div>
   ${!bs.length? '<div class="mainbox">You haven\'t set up any binders yet. Go to the <a data-go="binders">Binder workshop</a> to add one.</div>' : `
   <p>You have <b>${bs.length}</b> binder${bs.length>1?'s':''} planned (${bs.filter(b=>b.haveBinder).length} on the shelf), holding <b>${totIn.toLocaleString()}</b> cards. A card counts as "in the binder" when it has at least one copy under <span class="loc loc-binder">Binder</span> on its expansion page.</p>
@@ -815,13 +833,13 @@ function viewShelf(el){
 function binderCards(b){
   const inb=[], elsewhere=[], missing=[]; let total=0;
   (b.sets||[]).filter(id=>SETS[id]).forEach(id=>{ const o=ownedOf(id); T.cards[id].forEach(r=>{ total++; const e=o[r[0]]; const item={s:SETS[id],r,e};
-    if(qn(e)>0){ if(e[0]>0) inb.push(item); else elsewhere.push(item); } else missing.push(item); }); });
+    if(qn(e)>0){ if(locN(e,'binder')>0) inb.push(item); else elsewhere.push(item); } else missing.push(item); }); });
   return {inb,elsewhere,missing,total};
 }
 function shelfBinderHTML(b){
   const st=binderStatus(b), bc=binderCards(b); const first=SETS[(b.sets||[])[0]]; const ser=first?first.series:'Promos & Other';
   const m=shelfShow[b.id]||'in'; const list = m==='in'?bc.inb : m==='else'?bc.elsewhere : bc.missing;
-  const copies=bc.inb.reduce((n,x)=>n+x.e[0],0);
+  const copies=bc.inb.reduce((n,x)=>n+locN(x.e,'binder'),0);
   const seg=(k,n,c)=>`<button class="seg ${m===k?'on':''}" data-shelfmode="${k}" data-b="${b.id}">${n} (${c})</button>`;
   return `<div class="binder" id="bin-${b.id}" style="${styleVars(ser)};margin-top:18px">
     <div class="bh"><b>${esc(b.name)}</b>${b.haveBinder?'<span class="tag ok">On the shelf</span>':'<span class="tag warn">Need to buy</span>'}<a class="btn" data-go="view-${b.id}" style="text-shadow:none">📖 Binder view</a><a class="btn" data-go="binders" style="text-shadow:none">Workshop</a></div>
@@ -832,7 +850,7 @@ function shelfBinderHTML(b){
       <details class="cards" style="clear:both"><summary>Show the cards</summary>
         <div class="toolbar"><div class="grp">${seg('in','In this binder',bc.inb.length)}${seg('else','Owned, not in binder',bc.elsewhere.length)}${seg('miss','Missing',bc.missing.length)}</div></div>
         ${list.length? `<div class="roundy" style="${styleVars(ser)}"><table><tr><th>Page</th><th>No.</th><th>Card</th>${st.c.sets.length>1?'<th>Expansion</th>':''}<th class="hide-m">Rarity</th>${m==='miss'?'':'<th>Qty</th>'}${m==='else'?'<th>Where</th>':''}</tr>
-        ${list.map(x=>{ const pos=slotOf(b,x); return `<tr><td class="c nw" style="font-size:12px">${pos}</td><td class="c">${esc(x.r[1])}</td><td><b>${esc(x.r[2])}</b></td>${st.c.sets.length>1?`<td><a data-set="${x.s.id}">${esc(x.s.name)}</a></td>`:''}<td class="hide-m" style="font-size:12px">${esc(T.rar[x.r[3]]||'')}</td>${m==='miss'?'':`<td class="c">${m==='in'?x.e[0]:qn(x.e)}</td>`}${m==='else'?`<td>${locsOf(x.e).map(([k,n])=>`<span class="loc loc-${k}">${n} ×${x.e[LI[k]]}</span>`).join(' ')}</td>`:''}</tr>`;}).join('')}</table></div>` : '<p style="color:#777">Nothing here.</p>'}
+        ${list.map(x=>{ const pos=slotOf(b,x); return `<tr><td class="c nw" style="font-size:12px">${pos}</td><td class="c">${esc(x.r[1])}</td><td><b>${esc(x.r[2])}</b></td>${st.c.sets.length>1?`<td><a data-set="${x.s.id}">${esc(x.s.name)}</a></td>`:''}<td class="hide-m" style="font-size:12px">${esc(T.rar[x.r[3]]||'')}</td>${m==='miss'?'':`<td class="c">${m==='in'?locN(x.e,'binder'):qn(x.e)}</td>`}${m==='else'?`<td>${locsOf(x.e).map(([k,n])=>`<span class="loc loc-${k}">${n} ×${locN(x.e,k)}</span>`).join(' ')}</td>`:''}</tr>`;}).join('')}</table></div>` : '<p style="color:#777">Nothing here.</p>'}
       </details>
     </div></div>`;
 }
@@ -1185,7 +1203,8 @@ function cardModal(setId,key){
       <div class="infobox" style="${styleVars(s.series)};float:none;width:auto;margin:0"><div class="ttl">${esc(r[2])}<small>${esc(s.name)} · ${esc(r[1])}${isMainNum(r[1],s.printed)?'/'+s.printed:''}</small></div>
       <table><tr><th>Card type</th><td>${esc(sup)}${sub?' · '+esc(sub):''}</td></tr>${ty?`<tr><th>Type</th><td>${typeDot(ty)}${esc(ty)}</td></tr>`:''}
       <tr><th>Rarity</th><td>${esc(T.rar[r[3]]||'—')}</td></tr><tr><th>Illustrator</th><td>${esc(r[7]||'—')}</td></tr>
-      <tr><th>I own</th><td>${qn(e)? locsOf(e).map(([k,n])=>`<span class="loc loc-${k}">${n} ×${e[LI[k]]}</span>`).join(' ') : 'None yet'}</td></tr></table></div>
+      <tr><th>Regular</th><td>${regN(e)? LOCS.filter(([k])=>e[IX.r[k]]).map(([k,n])=>`<span class="loc loc-${k}">${n} ×${e[IX.r[k]]}</span>`).join(' ') : 'None yet'}</td></tr>
+      <tr><th>Reverse holo / 2nd</th><td>${spN(e)? LOCS.filter(([k])=>e[IX.s[k]]).map(([k,n])=>`<span class="loc loc-${k}">${n} ×${e[IX.s[k]]}</span>`).join(' ') : 'None yet'}</td></tr></table></div>
     </div></div>`;
   const prev=cards[idx-1], next=cards[idx+1];
   const foot=[mkBtn('← Previous','',()=>prev&&cardModal(setId,prev[0])), mkBtn('Next →','',()=>next&&cardModal(setId,next[0])), mkBtn('Close','pri',closeModal)];
@@ -1249,7 +1268,7 @@ async function moveOnline(){
   const btn=document.getElementById('moveOnline'); if(btn){ btn.disabled=true; btn.textContent='Moving…'; }
   try{
     // counts: merge (keep the higher count in each place)
-    for(const [sid,c] of Object.entries(L.owned||{})){ const cur=S.owned[sid]||(S.owned[sid]={}); for(const [k,e] of Object.entries(c)){ const o=cur[k]||[0,0,0]; cur[k]=[Math.max(o[0]||0,e[0]||0),Math.max(o[1]||0,e[1]||0),Math.max(o[2]||0,e[2]||0)]; } saveSet(sid); }
+    for(const [sid,c] of Object.entries(L.owned||{})){ const cur=S.owned[sid]||(S.owned[sid]={}); for(const [k,e] of Object.entries(c)){ const o=cur[k]||[0,0,0,0,0]; cur[k]=[0,1,2,3,4].map(i=>Math.max(o[i]||0,e[i]||0)); } saveSet(sid); }
     for(const b of Object.values(L.binders||{})){ if(!S.binders[b.id]) saveBinder(b); }
     if(!S.config.title && L.config && L.config.title){ S.config.title=L.config.title; S.config.wallColor=L.config.wallColor; saveConfig(); }
     // pictures from this browser's storage
