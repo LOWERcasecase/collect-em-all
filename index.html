@@ -590,6 +590,7 @@ function homeCharts(){
   document.addEventListener('mouseover',e=>{ const t=e.target.closest('[data-tip]'); if(!t){ tip.style.opacity=0; return; } tip.textContent=t.dataset.tip; tip.style.opacity=1; });
   document.addEventListener('mousemove',e=>{ if(tip.style.opacity==='1'){ tip.style.left=Math.min(window.innerWidth-tip.offsetWidth-8,e.clientX+12)+'px'; tip.style.top=(e.clientY+14)+'px'; } });
 })();
+document.addEventListener('click',e=>{ if(e.target.closest('#goPull')){ e.preventDefault(); findLoc='pull'; go('find'); } });
 function viewHome(el){
   const t=totals();
   const recent=[...T.sets].filter(s=>s.release<=TODAY).sort((a,b)=>b.release.localeCompare(a.release)).slice(0,6);
@@ -602,7 +603,7 @@ function viewHome(el){
   el.innerHTML=`
   <h1 class="ft">Main page</h1><div class="sub">From ${esc(S.config.title||'My Collectapedia')}, your personal card encyclopedia</div>
   <div class="mainbox"><b>Welcome!</b> This wiki tracks every English expansion (${T.sets.length} sets, ${t.total.toLocaleString()} cards). Open any expansion to tick off the cards you own and record where each one lives: a binder, or the bulk box. Use the <a data-go="binders">Binder workshop</a> to plan binders, pages and labels.</div>
-  <p style="margin:4px 0 10px"><b>${t.copies.toLocaleString()}</b> cards in total · <b>${t.have.toLocaleString()}</b> unique · ${t.started} expansions started${bs.length?` · ${bs.length} binder${bs.length===1?'':'s'}${todo.length?` (${todo.length} with to-dos)`:''}`:''}</p>
+  <p style="margin:4px 0 10px"><b>${t.copies.toLocaleString()}</b> cards in total · <b>${t.have.toLocaleString()}</b> unique · ${t.started} expansions started${bs.length?` · ${bs.length} binder${bs.length===1?'':'s'}${todo.length?` (${todo.length} with to-dos)`:''}`:''}${(()=>{const n=pullCount(); return n?` · <a id="goPull">${n} card${n===1?'':'s'} in bulk not in a binder →</a>`:'';})()}</p>
   ${t.copies? homeCharts() : ''}
   <h2>Most complete expansions</h2>
   ${topSets.length? setTbl(topSets) : '<p>You haven\'t marked any cards yet. Start with an <a data-go="expansions">expansion</a>.</p>'}
@@ -809,32 +810,34 @@ function typeOptions(sel){ return `<option value="">All types</option><optgroup 
 function matchRT(r,rar,typ){ if(rar!==''&&rar!=null&&String(r[3])!==String(rar)) return false;
   if(typ){ if(typ.startsWith('t:')){ if(T.sup[r[4]]!=='Pokémon'||T.typ[r[6]]!==typ.slice(2)) return false; } else if(T.sup[r[4]]!==typ.slice(2)) return false; }
   return true; }
+function pullOf(e){ if(!e) return {r:0,s:0}; return {r:(!(e[0]>0)&&e[1]>0)?1:0, s:(!(e[3]>0)&&e[4]>0)?1:0}; }
+function pullCount(){ let n=0; for(const s of T.sets){ const o=S.owned[s.id]; if(!o) continue; for(const k in o){ const p=pullOf(o[k]); n+=p.r+p.s; } } return n; }
 let findQ='', findLoc='all', findOpen={}, findRar='', findTyp='';
 function viewFind(el){
   const t=totals();
   el.innerHTML=`<h1 class="ft">Where's my card?</h1><div class="sub">From ${esc(S.config.title||'My Collectapedia')} · everything you own, by series and expansion</div>
   <div class="toolbar"><input type="search" id="fq" placeholder="Card name, e.g. Charizard" value="${esc(findQ)}" style="width:240px">
   <select id="frar">${rarOptions(findRar)}</select><select id="ftyp">${typeOptions(findTyp)}</select>
-  <div class="grp" id="flseg">${[['all','Everywhere']].concat(LOCS).map(([k,n])=>`<button class="seg ${findLoc===k?'on':''}" data-l="${k}">${n}${k!=='all'?' ('+(t.copiesByLoc[k]||0)+')':''}</button>`).join('')}</div>
+  <div class="grp" id="flseg">${[['all','Everywhere']].concat(LOCS).map(([k,n])=>`<button class="seg ${findLoc===k?'on':''}" data-l="${k}">${n}${k!=='all'?' ('+(t.copiesByLoc[k]||0)+')':''}</button>`).join('')}<button class="seg ${findLoc==='pull'?'on':''}" data-l="pull" title="Cards with a copy in bulk but none of that version in the binder">In bulk, not in binder (${pullCount()})</button></div>
   <span style="margin-left:auto"><button class="btn" id="fexp">Open all</button> <button class="btn" id="fcol">Close all</button></span></div>
   <div id="fres"></div>`;
   const run=()=>{
-    const q=findQ.trim().toLowerCase(); const L=findLoc==='all'?null:findLoc; const LN=L?LOCNAME[L].toLowerCase():''; const filtered=!!(q||findRar!==''||findTyp);
+    const PULL=findLoc==='pull'; const q=findQ.trim().toLowerCase(); const L=findLoc==='all'?null:PULL?'bulk':findLoc; const LN=PULL?'to move':L?LOCNAME[L].toLowerCase():''; const filtered=!!(q||findRar!==''||findTyp);
     let cards=0, copies=0; const html=[];
     T.series.forEach((ser,si)=>{
       const exp=[];
       for(const s of SERIES_SETS[ser]){ const o=S.owned[s.id]; if(!o) continue; const rows=[]; let n=0; const byL={binder:0,bulk:0};
-        for(const r of T.cards[s.id]){ const e=o[r[0]]; if(!qn(e)) continue; const c=L? locN(e,L) : qn(e); if(!c) continue;
+        for(const r of T.cards[s.id]){ const e=o[r[0]]; if(!qn(e)) continue; let c=L? locN(e,L) : qn(e); if(PULL){ const pp=pullOf(e); c=pp.r+pp.s; } if(!c) continue;
           if(q&&!r[2].toLowerCase().includes(q)) continue;
           if(!matchRT(r,findRar,findTyp)) continue;
-          rows.push(findRow(s,r,e,L,c)); n+=c; LOCS.forEach(([k])=>byL[k]+=locN(e,k)); }
+          rows.push(findRow(s,r,e,L,c,PULL)); n+=c; LOCS.forEach(([k])=>byL[k]+=locN(e,k)); }
         if(rows.length) exp.push({s,rows,n,byL}); }
       if(!exp.length) return;
       const sc=exp.reduce((a,x)=>a+x.n,0), sr=exp.reduce((a,x)=>a+x.rows.length,0); cards+=sr; copies+=sc;
-      const cols=L?6:7;
-      html.push(`<h2 id="fser${si}">${esc(ser)} <span style="font-size:13px;color:#666;font-family:'Open Sans',sans-serif">${sr} card${sr===1?'':'s'} · ${sc} ${L?'in '+LN:'in total'}</span></h2>
+      const cols=L&&!PULL?6:7;
+      html.push(`<h2 id="fser${si}">${esc(ser)} <span style="font-size:13px;color:#666;font-family:'Open Sans',sans-serif">${sr} card${sr===1?'':'s'} · ${sc} ${PULL?'to move':L?'in '+LN:'in total'}</span></h2>
       <div class="roundy" style="${styleVars(ser)}"><table>
-        <tr><th class="hide-m">Symbol</th><th class="hide-m">Logo</th><th>Expansion</th><th class="hide-m">Code</th><th>Cards</th><th>#</th>${L?'':'<th>Where</th>'}</tr>
+        <tr><th class="hide-m">Symbol</th><th class="hide-m">Logo</th><th>Expansion</th><th class="hide-m">Code</th><th>Cards</th><th>${PULL?'To move':'#'}</th>${L&&!PULL?'':'<th>'+(PULL?'Binder':'Where')+'</th>'}</tr>
         ${exp.map(x=>{ const open=filtered? true : !!findOpen[x.s.id];
           return `<tr class="fexp-row ${open?'open':''}" data-fset="${x.s.id}" style="cursor:pointer">
             <td class="c hide-m">${imgTag(x.s.id,'sym',null,'max-height:24px;max-width:36px')}</td>
@@ -842,14 +845,14 @@ function viewFind(el){
             <td><span class="fx">${open?'▾':'▸'}</span> <b>${esc(x.s.name)}</b></td>
             <td class="c hide-m">${x.s.code?`<span class="code">${esc(x.s.code)}</span>`:''}</td>
             <td class="c">${x.rows.length}</td><td class="c"><b>${x.n}</b></td>
-            ${L?'':`<td>${LOCS.filter(([k])=>x.byL[k]).map(([k,nm])=>`<span class="loc loc-${k}">${nm} ×${x.byL[k]}</span>`).join(' ')}</td>`}</tr>
+            ${PULL? `<td style="font-size:12px">${bindersForSet(x.s.id).map(b=>esc(b.name)).join(', ')||'<span style="color:#999">No binder yet</span>'}</td>` : L?'':`<td>${LOCS.filter(([k])=>x.byL[k]).map(([k,nm])=>`<span class="loc loc-${k}">${nm} ×${x.byL[k]}</span>`).join(' ')}</td>`}</tr>
           <tr class="fexp-cards" ${open?'':'hidden'}><td colspan="${cols}" style="padding:0 0 6px 18px;background:#fbfbfd">
-            <table class="inner"><tr><th>No.</th><th>Card</th><th>#</th><th class="hide-m">Type</th><th class="hide-m">Rarity</th><th>Version</th>${L?'':'<th>Where</th>'}</tr>${x.rows.join('')}</table>
+            <table class="inner"><tr><th>No.</th><th>Card</th><th>${PULL?'To move':'#'}</th><th class="hide-m">Type</th><th class="hide-m">Rarity</th><th>Version${PULL?' to move':''}</th>${PULL?'<th>Binder</th>':L?'':'<th>Where</th>'}</tr>${x.rows.join('')}</table>
             <div style="font-size:12px;padding:4px 2px"><a data-set="${x.s.id}">Open ${esc(x.s.name)} →</a></div></td></tr>`; }).join('')}
       </table></div>`);
     });
-    document.getElementById('fres').innerHTML = cards? `<p>${cards} card${cards===1?'':'s'} (${copies} ${L?'in '+LN:'in total'}). Tap an expansion to see its cards.</p>`+html.join('')
-      : `<p>${t.have?'Nothing you own matches.':'You haven\'t marked any cards as owned yet. Open an <a data-go="expansions">expansion</a> to start.'}</p>`;
+    document.getElementById('fres').innerHTML = cards? (PULL? `<p><b>${copies}</b> card${copies===1?'':'s'} to move from bulk into a binder. Each one has a copy in bulk but none of that version in the binder. Tap an expansion to see them, or open the expansion to update its counts once you've moved them.</p>` : `<p>${cards} card${cards===1?'':'s'} (${copies} ${L?'in '+LN:'in total'}). Tap an expansion to see its cards.</p>`)+html.join('')
+      : PULL? '<p><span class="tag ok">All caught up</span> Every card you have in bulk already has that version in the binder.</p>' : `<p>${t.have?'Nothing you own matches.':'You haven\'t marked any cards as owned yet. Open an <a data-go="expansions">expansion</a> to start.'}</p>`;
     document.querySelectorAll('#fres tr.fexp-row').forEach(tr=>tr.onclick=e=>{ if(e.target.closest('a')) return; const id=tr.dataset.fset; const open=!tr.classList.contains('open');
       tr.classList.toggle('open',open); tr.nextElementSibling.hidden=!open; tr.querySelector('.fx').textContent=open?'▾':'▸'; if(!findQ.trim()&&findRar===''&&!findTyp) findOpen[id]=open; });
   };
@@ -861,9 +864,12 @@ function viewFind(el){
   el.querySelector('#fcol').onclick=()=>{ findOpen={}; run(); };
   run();
 }
-function findRow(s,r,e,L,n){
-  const vr=L? (e[IX.r[L]]||0) : regN(e), vs=L? (e[IX.s[L]]||0) : spN(e);
-  const ver=`${vr?`<span class="vb on">R</span>${vr>1?'×'+vr:''} `:''}${vs?`<span class="vb sp on">RH</span>${vs>1?'×'+vs:''}`:''}`;
+function findRow(s,r,e,L,n,PULL){
+  let vr=L? (e[IX.r[L]]||0) : regN(e), vs=L? (e[IX.s[L]]||0) : spN(e);
+  if(PULL){ const pp=pullOf(e); vr=pp.r?1:0; vs=pp.s?1:0; }
+  const ver=PULL? [vr?'<span class="vb on">R</span> Regular':'', vs?'<span class="vb sp on">RH</span> Reverse holo':''].filter(Boolean).join('<br>') : `${vr?`<span class="vb on">R</span>${vr>1?'×'+vr:''} `:''}${vs?`<span class="vb sp on">RH</span>${vs>1?'×'+vs:''}`:''}`;
+  const binders=PULL? bindersForSet(s.id) : [];
+  if(PULL) return `<tr><td class="c nw">${esc(r[1])}</td><td><b>${esc(r[2])}</b></td><td class="c"><b>${n}</b></td><td class="hide-m nw" style="font-size:12px">${T.sup[r[4]]==='Pokémon'? typeDot(T.typ[r[6]]||'')+esc(T.typ[r[6]]||'') : esc(T.sup[r[4]]||'')}</td><td class="hide-m" style="font-size:12px">${esc(rarLabel(T.rar[r[3]]||''))}</td><td style="font-size:12px">${ver}</td><td style="font-size:12px">${binders.length? binders.map(b=>`<a data-go="view-${b.id}">${esc(b.name)}</a>`).join(', ') : '<span style="color:#999">No binder yet</span>'}</td></tr>`;
   const where=L?'':`<td>${locsOf(e).map(([k,nm])=>`<span class="loc loc-${k}">${nm} ×${locN(e,k)}</span>`).join(' ')}</td>`;
   const sup=T.sup[r[4]]||'', ty=T.typ[r[6]]||'';
   return `<tr><td class="c nw">${esc(r[1])}</td><td><b>${esc(r[2])}</b></td><td class="c"><b>${n}</b></td><td class="hide-m nw" style="font-size:12px">${sup==='Pokémon'? typeDot(ty)+esc(ty) : esc(sup)}</td><td class="hide-m" style="font-size:12px">${esc(rarLabel(T.rar[r[3]]||''))}</td><td class="nw" style="font-size:12px">${ver}</td>${where}</tr>`;
