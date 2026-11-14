@@ -86,6 +86,28 @@ button{font:inherit}
 .fser[open]>summary b::before{content:"▾ "}
 .fser>summary span{font-size:12.5px;opacity:.95}
 .fser .roundy{border:none;border-radius:0;margin:0!important;padding:0 3px 3px}
+.roundy table.inner{border-radius:0;background:transparent;font-size:12.5px}
+.roundy table.inner th{background:transparent;border-bottom:1px solid #ddd;font-size:11.5px;color:#555}
+.roundy table.inner td{border-top:1px solid #f0f0f3}
+tr.fexp-row:hover td{background:#f3f7ff}
+tr.fexp-row.open td{background:var(--hl)}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:6px}
+.chart .in{padding:10px 12px}
+.hb{display:flex;flex-direction:column;gap:5px}
+.hbr{display:grid;grid-template-columns:92px 1fr auto;align-items:center;gap:8px;font-size:12px;padding:1px 0;cursor:default}
+.hbl{color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hbt{height:12px;position:relative}
+.hbt i{display:block;height:100%;border-radius:0 4px 4px 0}
+.hbr:hover .hbt i{filter:brightness(1.08);box-shadow:0 0 0 2px #fff,0 0 0 3px #bbb}
+.hbv{font-variant-numeric:tabular-nums;color:#202122;font-weight:600;min-width:28px;text-align:right}
+.sb{margin-bottom:12px}
+.sbt{font-size:12px;color:#555;margin-bottom:4px;font-weight:600}
+.sbb{display:flex;gap:2px;height:22px}
+.sbb i{display:block;height:100%}
+.sbb i:first-child{border-radius:4px 0 0 4px}.sbb i:last-child{border-radius:0 4px 4px 0}.sbb i:only-child{border-radius:4px}
+.sbl{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;margin-top:5px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+#ctip{position:fixed;pointer-events:none;background:#202122;color:#fff;font-size:12px;padding:4px 8px;border-radius:5px;opacity:0;transition:opacity .1s;z-index:70;white-space:nowrap}
 .shelf-sets{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
 details.cards>summary{cursor:pointer;font-weight:600;color:var(--link);margin:6px 0}
 #content{flex:1;min-width:0;background:#fff;border:1px solid var(--border);border-radius:0 12px 12px 12px;padding:18px 26px 30px;box-shadow:0 2px 12px rgba(0,0,0,.18)}
@@ -530,22 +552,61 @@ function totals(){
   T.sets.forEach(s=>{const st=setStats(s.id); have+=st.have; reg+=st.reg; total+=st.total; copies+=st.copies; got+=st.got; need+=st.need; full+=st.full; for(const k in st.byLoc){ byLoc[k]=(byLoc[k]||0)+st.byLoc[k]; copiesByLoc[k]=(copiesByLoc[k]||0)+st.copiesByLoc[k]; } if(st.have) started++; if(st.reg&&st.reg>=st.total) complete++; if(st.total&&st.full>=st.total) specialComplete++;});
   return {have,reg,total,copies,got,need,full,byLoc,copiesByLoc,started,complete,specialComplete};
 }
+/* ---------- Main page charts ---------- */
+function homeStats(){
+  const ser={}, typ={}; let rC=0, sC=0, bC=0, kC=0;
+  for(const s of T.sets){ const o=S.owned[s.id]; if(!o) continue;
+    for(const r of T.cards[s.id]){ const e=o[r[0]]; const q=qn(e); if(!q) continue;
+      ser[s.series]=(ser[s.series]||0)+q; rC+=regN(e); sC+=spN(e); bC+=locN(e,'binder'); kC+=locN(e,'bulk');
+      const sup=T.sup[r[4]]; const k= sup==='Pokémon'? (T.typ[r[6]]||'Colorless') : (sup||'Other'); typ[k]=(typ[k]||0)+q; } }
+  return {ser,typ,rC,sC,bC,kC};
+}
+function hbars(items,max){ // items: [label,value,color,tip]
+  return `<div class="hb">${items.map(([l,v,c,tip])=>`<div class="hbr" data-tip="${esc(tip||(l+': '+v.toLocaleString()))}"><span class="hbl">${esc(l)}</span><span class="hbt"><i style="width:${max?Math.max(1.5,v*100/max):0}%;background:${c}"></i></span><span class="hbv">${v.toLocaleString()}</span></div>`).join('')}</div>`;
+}
+function splitBar(title,parts){ // parts: [label,value,color]
+  const tot=parts.reduce((a,p)=>a+p[1],0)||1;
+  return `<div class="sb"><div class="sbt">${title}</div><div class="sbb">${parts.filter(p=>p[1]).map(([l,v,c])=>`<i style="width:${v*100/tot}%;background:${c}" data-tip="${esc(l)}: ${v.toLocaleString()} (${Math.round(v*100/tot)}%)"></i>`).join('')}</div>
+    <div class="sbl">${parts.map(([l,v,c])=>`<span><span class="sw" style="background:${c}"></span>${esc(l)} <b>${v.toLocaleString()}</b> <span style="color:#777">${Math.round(v*100/tot)}%</span></span>`).join('')}</div></div>`;
+}
+function homeCharts(){
+  const h=homeStats();
+  const serItems=T.series.filter(n=>h.ser[n]).map(n=>[n.replace(' Series',''),h.ser[n],'#3d8f4a',`${n}: ${h.ser[n].toLocaleString()} cards`]);
+  const serMax=Math.max(...serItems.map(x=>x[1]));
+  const typeKeys=TYPE_ORDER.filter(k=>h.typ[k]).concat(['Trainer','Energy'].filter(k=>h.typ[k]));
+  const typItems=typeKeys.map(k=>[k,h.typ[k],TYPE_COLORS[k]||'#9aa0a6',`${k}: ${h.typ[k].toLocaleString()} cards`]);
+  const typMax=Math.max(...typItems.map(x=>x[1]));
+  return `<div class="charts">
+    <div class="box chart"><h4>Cards by series</h4><div class="in">${hbars(serItems,serMax)}</div></div>
+    <div class="box chart"><h4>Where your cards are &amp; which version</h4><div class="in">
+      ${splitBar('Location',[['Binder',h.bC,'#3b78c2'],['Bulk',h.kC,'#b7791f']])}
+      ${splitBar('Version',[['Regular',h.rC,'#2e8b3b'],['Reverse holo / 2nd',h.sC,'#7a5cc8']])}
+      <div style="font-size:12px;color:#555;margin-top:8px"><a data-go="find">Find a card →</a></div></div></div>
+    <div class="box chart"><h4>Cards by type</h4><div class="in">${hbars(typItems,typMax)}</div></div>
+  </div>`;
+}
+// Shared hover tooltip for chart marks
+(function(){ const tip=document.createElement('div'); tip.id='ctip'; document.body.appendChild(tip);
+  document.addEventListener('mouseover',e=>{ const t=e.target.closest('[data-tip]'); if(!t){ tip.style.opacity=0; return; } tip.textContent=t.dataset.tip; tip.style.opacity=1; });
+  document.addEventListener('mousemove',e=>{ if(tip.style.opacity==='1'){ tip.style.left=Math.min(window.innerWidth-tip.offsetWidth-8,e.clientX+12)+'px'; tip.style.top=(e.clientY+14)+'px'; } });
+})();
 function viewHome(el){
   const t=totals();
   const recent=[...T.sets].filter(s=>s.release<=TODAY).sort((a,b)=>b.release.localeCompare(a.release)).slice(0,6);
   const upcoming=[...T.sets].filter(s=>s.release>TODAY).sort((a,b)=>a.release.localeCompare(b.release));
-  const startedSets=T.sets.map(s=>({s,st:setStats(s.id)})).filter(x=>x.st.have).sort((a,b)=>(b.st.reg/b.st.total-a.st.reg/a.st.total)||(b.st.full/b.st.total-a.st.full/a.st.total)).slice(0,8);
+  const cmp=(a,b)=>(b.st.reg/b.st.total-a.st.reg/a.st.total)||(b.st.full/b.st.total-a.st.full/a.st.total);
+  const allStarted=T.sets.map(s=>({s,st:setStats(s.id)})).filter(x=>x.st.have).sort(cmp);
+  const topSets=allStarted.slice(0,5), bottomSets=allStarted.length>5? allStarted.slice(5).slice(-5).reverse() : [];
+  const setTbl=list=>`<div class="roundy"><table><tr><th>Expansion</th><th class="hide-m">Series</th><th>Total cards</th><th style="width:42%">Regular set / Special set</th></tr>${list.map(x=>`<tr><td><a data-set="${x.s.id}">${esc(x.s.name)}</a></td><td class="hide-m">${esc(x.s.series)}</td><td class="c">${x.st.copies}</td><td>${dualHTML(x.st)}</td></tr>`).join('')}</table></div>`;
   const bs=Object.values(S.binders); const todo=bs.map(b=>({b,st:binderStatus(b)})).filter(x=>!x.st.ready);
   el.innerHTML=`
   <h1 class="ft">Main page</h1><div class="sub">From ${esc(S.config.title||'My Collectapedia')}, your personal card encyclopedia</div>
   <div class="mainbox"><b>Welcome!</b> This wiki tracks every English expansion (${T.sets.length} sets, ${t.total.toLocaleString()} cards). Open any expansion to tick off the cards you own and record where each one lives: a binder, or the bulk box. Use the <a data-go="binders">Binder workshop</a> to plan binders, pages and labels.</div>
-  <div class="grid">
-    <div class="box"><h4>Collection at a glance</h4><div class="in"><div class="check"><span class="lbl">Total cards</span><b class="stat" style="font-size:22px">${t.copies.toLocaleString()}</b></div><div class="check"><span class="lbl">Regular cards</span><b class="stat" style="font-size:22px">${t.reg.toLocaleString()}</b></div><div class="check"><span class="lbl">Unique cards</span><b class="stat" style="font-size:22px">${t.have.toLocaleString()}</b></div><div class="check"><span class="lbl">Special cards <span style="font-weight:400;color:#777">(reverse holo / 2nd copy)</span></span><b class="stat" style="font-size:22px">${t.full.toLocaleString()}</b></div><div style="margin-top:6px;font-size:12.5px">${t.started} sets started · <b>${t.complete}</b> regular sets complete · <b>${t.specialComplete}</b> special sets complete</div></div></div>
-    <div class="box"><h4>Where your cards are</h4><div class="in"><div class="check" style="font-size:11.5px;color:#777"><span class="lbl"></span><span style="width:60px;text-align:right">total</span><span style="width:70px;text-align:right">unique</span></div>${LOCS.map(([k,n])=>`<div class="check"><span class="loc loc-${k}">${n}</span><span class="lbl"></span><b style="width:60px;text-align:right">${(t.copiesByLoc[k]||0).toLocaleString()}</b><span style="width:70px;text-align:right">${(t.byLoc[k]||0).toLocaleString()}</span></div>`).join('')}<div style="margin-top:6px"><a data-go="find">Find a card →</a></div></div></div>
-    <div class="box"><h4>Binder to-do</h4><div class="in">${!bs.length?'No binders planned yet. <a data-go="binders">Plan one →</a>': !todo.length?'<span class="tag ok">All binders ready</span>': todo.map(x=>`<div style="margin-bottom:4px"><b>${esc(x.b.name)}</b>: ${x.st.todo.map(esc).join(', ')}</div>`).join('')}</div></div>
-  </div>
+  <p style="margin:4px 0 10px"><b>${t.copies.toLocaleString()}</b> cards in total · <b>${t.have.toLocaleString()}</b> unique · ${t.started} expansions started${bs.length?` · ${bs.length} binder${bs.length===1?'':'s'}${todo.length?` (${todo.length} with to-dos)`:''}`:''}</p>
+  ${t.copies? homeCharts() : ''}
   <h2>Most complete expansions</h2>
-  ${startedSets.length? `<div class="roundy"><table><tr><th>Expansion</th><th>Series</th><th>Total cards</th><th style="width:42%">Regular set / Special set</th></tr>${startedSets.map(x=>`<tr><td><a data-set="${x.s.id}">${esc(x.s.name)}</a></td><td>${esc(x.s.series)}</td><td class="c">${x.st.copies}</td><td>${dualHTML(x.st)}</td></tr>`).join('')}</table></div>` : '<p>You haven\'t marked any cards yet. Start with an <a data-go="expansions">expansion</a>.</p>'}
+  ${topSets.length? setTbl(topSets) : '<p>You haven\'t marked any cards yet. Start with an <a data-go="expansions">expansion</a>.</p>'}
+  ${bottomSets.length? `<h2>Least complete expansions</h2><p style="font-size:12.5px;color:#555">Of the ${allStarted.length} expansions you've started, these have the furthest to go.</p>${setTbl(bottomSets)}` : ''}
   <h2>Latest expansions</h2>
   <div class="roundy" style="${styleVars(recent[0]?recent[0].series:'')}"><table><tr><th>Expansion</th><th>Code</th><th>Cards</th><th>Released</th></tr>${recent.map(s=>`<tr><td><a data-set="${s.id}">${esc(s.name)}</a></td><td class="c"><span class="code">${esc(s.code)}</span></td><td class="c">${s.total}</td><td>${fmtDate(s.release)}</td></tr>`).join('')}</table></div>
   ${upcoming.length?`<p><b>Upcoming:</b> ${upcoming.map(s=>`<a data-set="${s.id}">${esc(s.name)}</a> (${fmtDate(s.release)})`).join(', ')}</p>`:''}
@@ -577,10 +638,10 @@ function viewExpansions(el){
 }
 
 /* ---------- Set page ---------- */
-let setFilter='all', setQuery='', setDefaultLoc=null; let setLayout='list'; try{ setLayout=localStorage.getItem('collectapedia.layout')||'list'; }catch(_){}
+let setRar='', setTyp=''; let setFilter='all', setQuery='', setDefaultLoc=null; let setLayout='list'; try{ setLayout=localStorage.getItem('collectapedia.layout')||'list'; }catch(_){}
 function viewSet(el,id,soft){
   const s=SETS[id]; if(!s){ el.innerHTML='<h1 class="ft">Expansion not found</h1><p><a data-go="expansions">Back to the list</a></p>'; return; }
-  if(!soft){ setFilter='all'; setQuery=''; }
+  if(!soft){ setFilter='all'; setQuery=''; setRar=''; setTyp=''; }
   const cards=T.cards[id]; const st=setStats(id);
   const ser=SERIES_SETS[s.series]; const pos=ser.indexOf(s); const prev=ser[pos-1], next=ser[pos+1];
   const rarCount={}; cards.forEach(r=>{const k=T.rar[r[3]]||'Unknown'; rarCount[k]=rarCount[k]||[0,0]; rarCount[k][0]++; const e=ownedOf(id)[r[0]]; if(qn(e)>0) rarCount[k][1]++;});
@@ -627,6 +688,7 @@ function viewSet(el,id,soft){
   <div class="toolbar">
     <div class="grp" id="fseg">${[['all','All'],['missing','Missing'],['needreg','Need regular'],['need','Need reverse holo'],['done','Have both'],['binder','In binder'],['bulk','In bulk']].map(([k,n])=>`<button class="seg ${setFilter===k?'on':''}" data-f="${k}">${n}</button>`).join('')}</div>
     <input type="search" id="cardq" placeholder="Filter by name, number or artist" value="${esc(setQuery)}" style="width:220px">
+    <select id="setRar">${rarOptions(setRar,cards.map(r=>r[3]))}</select><select id="setTyp">${typeOptions(setTyp)}</select>
     <div class="grp" id="vseg"><button class="seg ${setLayout==='list'?'on':''}" data-v="list">☰ List</button><button class="seg ${setLayout==='gallery'?'on':''}" data-v="gallery">▦ Gallery</button></div>
     <span class="rw"><label class="btn" style="cursor:pointer" title="Pick many card pictures at once. Name each file after the card number, e.g. 001.jpg or 25.png">📷 Upload card pictures…<input type="file" id="multiUp" accept="image/*" multiple hidden></label></span>
     <span class="rw" style="margin-left:auto"><select id="bulkAct"><option value="">Bulk actions…</option>${LOCS.map(([k,n])=>`<option value="add-r-${k}">Add the regular of each card shown → ${n}</option>`).join('')}${LOCS.map(([k,n])=>`<option value="add-s-${k}">Add the reverse holo of each card shown → ${n}</option>`).join('')}${LOCS.map(([k,n])=>`<option value="mv-${k}">Move every copy shown → ${n}</option>`).join('')}<option value="clear">Clear all shown</option></select></span>
@@ -638,6 +700,8 @@ function viewSet(el,id,soft){
   renderSetRows(id);
   el.querySelector('#fseg').onclick=e=>{const b=e.target.closest('[data-f]'); if(!b) return; setFilter=b.dataset.f; el.querySelectorAll('#fseg .seg').forEach(x=>x.classList.toggle('on',x===b)); renderSetRows(id);};
   el.querySelector('#cardq').oninput=e=>{setQuery=e.target.value; renderSetRows(id);};
+  el.querySelector('#setRar').onchange=e=>{setRar=e.target.value; renderSetRows(id);};
+  el.querySelector('#setTyp').onchange=e=>{setTyp=e.target.value; renderSetRows(id);};
   el.querySelector('#bulkAct').onchange=e=>{const v=e.target.value; e.target.value=''; if(!v) return; bulkAction(id,v);};
   el.querySelector('#vseg').onclick=e=>{const b=e.target.closest('[data-v]'); if(!b) return; setLayout=b.dataset.v; try{localStorage.setItem('collectapedia.layout',setLayout);}catch(_){} el.querySelectorAll('#vseg .seg').forEach(x=>x.classList.toggle('on',x===b)); document.getElementById('setTable').style.display=setLayout==='gallery'?'none':''; document.getElementById('gallery').style.display=setLayout==='gallery'?'':'none'; renderSetRows(id);};
   el.querySelector('#multiUp').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; bulkUploadCards(id,fs); };
@@ -657,6 +721,7 @@ function visibleRows(id){
     if(setFilter==='need'&&spN(e)>0) return false;
     if(setFilter==='done'&&!(regN(e)>0&&spN(e)>0)) return false;
     if(['binder','bulk'].includes(setFilter)&&!(locN(e,setFilter)>0)) return false;
+    if(!matchRT(r,setRar,setTyp)) return false;
     if(q && !(r[2].toLowerCase().includes(q) || r[1].toLowerCase()===q || (r[7]||'').toLowerCase().includes(q))) return false;
     return true;});
 }
@@ -735,36 +800,64 @@ function cardTable(list,onlyLoc){
 }
 
 /* ---------- Find a card ---------- */
-let findQ='', findLoc='all', findOpen={};
+// Rarity & type filters (shared by Where's my card and the expansion card lists)
+const TYPE_ORDER=['Grass','Fire','Water','Lightning','Psychic','Fighting','Darkness','Metal','Fairy','Dragon','Colorless'];
+function rarLabel(x){ return x==='MEGA_ATTACK_RARE'?'Mega Attack Rare':x; }
+function rarOptions(sel,ids){ const list=ids? [...new Set(ids)].filter(i=>i>=0) : T.rar.map((_,i)=>i); list.sort((a,b)=>rarLabel(T.rar[a]).localeCompare(rarLabel(T.rar[b])));
+  return `<option value="">All rarities</option>`+list.map(i=>`<option value="${i}" ${String(sel)===String(i)?'selected':''}>${esc(rarLabel(T.rar[i]))}</option>`).join(''); }
+function typeOptions(sel){ return `<option value="">All types</option><optgroup label="Pokémon">${TYPE_ORDER.map(t=>`<option value="t:${t}" ${sel==='t:'+t?'selected':''}>${t}</option>`).join('')}</optgroup><optgroup label="Other cards"><option value="s:Trainer" ${sel==='s:Trainer'?'selected':''}>Trainer</option><option value="s:Energy" ${sel==='s:Energy'?'selected':''}>Energy</option></optgroup>`; }
+function matchRT(r,rar,typ){ if(rar!==''&&rar!=null&&String(r[3])!==String(rar)) return false;
+  if(typ){ if(typ.startsWith('t:')){ if(T.sup[r[4]]!=='Pokémon'||T.typ[r[6]]!==typ.slice(2)) return false; } else if(T.sup[r[4]]!==typ.slice(2)) return false; }
+  return true; }
+let findQ='', findLoc='all', findOpen={}, findRar='', findTyp='';
 function viewFind(el){
   const t=totals();
-  el.innerHTML=`<h1 class="ft">Where's my card?</h1><div class="sub">Search everything you own and see where it is stored</div>
-  <div class="toolbar"><input type="search" id="fq" placeholder="Card name, e.g. Charizard" value="${esc(findQ)}" style="width:260px">
+  el.innerHTML=`<h1 class="ft">Where's my card?</h1><div class="sub">From ${esc(S.config.title||'My Collectapedia')} · everything you own, by series and expansion</div>
+  <div class="toolbar"><input type="search" id="fq" placeholder="Card name, e.g. Charizard" value="${esc(findQ)}" style="width:240px">
+  <select id="frar">${rarOptions(findRar)}</select><select id="ftyp">${typeOptions(findTyp)}</select>
   <div class="grp" id="flseg">${[['all','Everywhere']].concat(LOCS).map(([k,n])=>`<button class="seg ${findLoc===k?'on':''}" data-l="${k}">${n}${k!=='all'?' ('+(t.copiesByLoc[k]||0)+')':''}</button>`).join('')}</div>
   <span style="margin-left:auto"><button class="btn" id="fexp">Open all</button> <button class="btn" id="fcol">Close all</button></span></div>
   <div id="fres"></div>`;
   const run=()=>{
-    const q=findQ.trim().toLowerCase(); const L=findLoc==='all'?null:findLoc;
+    const q=findQ.trim().toLowerCase(); const L=findLoc==='all'?null:findLoc; const LN=L?LOCNAME[L].toLowerCase():''; const filtered=!!(q||findRar!==''||findTyp);
     let cards=0, copies=0; const html=[];
     T.series.forEach((ser,si)=>{
-      const rows=[]; let sc=0; const setsHit=new Set();
-      for(const s of SERIES_SETS[ser]){ const o=S.owned[s.id]; if(!o) continue;
-        for(const r of T.cards[s.id]){ const e=o[r[0]]; if(!qn(e)) continue; const n=L? locN(e,L) : qn(e); if(!n) continue;
+      const exp=[];
+      for(const s of SERIES_SETS[ser]){ const o=S.owned[s.id]; if(!o) continue; const rows=[]; let n=0; const byL={binder:0,bulk:0};
+        for(const r of T.cards[s.id]){ const e=o[r[0]]; if(!qn(e)) continue; const c=L? locN(e,L) : qn(e); if(!c) continue;
           if(q&&!r[2].toLowerCase().includes(q)) continue;
-          rows.push(findRow(s,r,e,L,n)); sc+=n; setsHit.add(s.id); } }
-      if(!rows.length) return;
-      cards+=rows.length; copies+=sc;
-      const open = q? true : !!findOpen[ser];
-      html.push(`<details class="fser" data-ser="${esc(ser)}" ${open?'open':''} style="${styleVars(ser)}"><summary><b>${esc(ser)}</b><span>${setsHit.size} expansion${setsHit.size===1?'':'s'} · ${rows.length} card${rows.length===1?'':'s'} · ${sc} ${L?'in '+LOCNAME[L].toLowerCase():'in total'}</span></summary>
-        <div class="roundy" style="margin:6px 0 4px"><table><tr><th>Expansion</th><th>No.</th><th>Card</th><th>#</th><th class="hide-m">Rarity</th><th>Version</th>${L?'':'<th>Where</th>'}</tr>${rows.join('')}</table></div></details>`);
+          if(!matchRT(r,findRar,findTyp)) continue;
+          rows.push(findRow(s,r,e,L,c)); n+=c; LOCS.forEach(([k])=>byL[k]+=locN(e,k)); }
+        if(rows.length) exp.push({s,rows,n,byL}); }
+      if(!exp.length) return;
+      const sc=exp.reduce((a,x)=>a+x.n,0), sr=exp.reduce((a,x)=>a+x.rows.length,0); cards+=sr; copies+=sc;
+      const cols=L?6:7;
+      html.push(`<h2 id="fser${si}">${esc(ser)} <span style="font-size:13px;color:#666;font-family:'Open Sans',sans-serif">${sr} card${sr===1?'':'s'} · ${sc} ${L?'in '+LN:'in total'}</span></h2>
+      <div class="roundy" style="${styleVars(ser)}"><table>
+        <tr><th class="hide-m">Symbol</th><th class="hide-m">Logo</th><th>Expansion</th><th class="hide-m">Code</th><th>Cards</th><th>#</th>${L?'':'<th>Where</th>'}</tr>
+        ${exp.map(x=>{ const open=filtered? true : !!findOpen[x.s.id];
+          return `<tr class="fexp-row ${open?'open':''}" data-fset="${x.s.id}" style="cursor:pointer">
+            <td class="c hide-m">${imgTag(x.s.id,'sym',null,'max-height:24px;max-width:36px')}</td>
+            <td class="c hide-m">${imgTag(x.s.id,'logo',null,'max-height:30px;max-width:100px')}</td>
+            <td><span class="fx">${open?'▾':'▸'}</span> <b>${esc(x.s.name)}</b></td>
+            <td class="c hide-m">${x.s.code?`<span class="code">${esc(x.s.code)}</span>`:''}</td>
+            <td class="c">${x.rows.length}</td><td class="c"><b>${x.n}</b></td>
+            ${L?'':`<td>${LOCS.filter(([k])=>x.byL[k]).map(([k,nm])=>`<span class="loc loc-${k}">${nm} ×${x.byL[k]}</span>`).join(' ')}</td>`}</tr>
+          <tr class="fexp-cards" ${open?'':'hidden'}><td colspan="${cols}" style="padding:0 0 6px 18px;background:#fbfbfd">
+            <table class="inner"><tr><th>No.</th><th>Card</th><th>#</th><th class="hide-m">Type</th><th class="hide-m">Rarity</th><th>Version</th>${L?'':'<th>Where</th>'}</tr>${x.rows.join('')}</table>
+            <div style="font-size:12px;padding:4px 2px"><a data-set="${x.s.id}">Open ${esc(x.s.name)} →</a></div></td></tr>`; }).join('')}
+      </table></div>`);
     });
-    document.getElementById('fres').innerHTML = cards? `<p>${cards} card${cards===1?'':'s'} (${copies} ${L?'in '+LOCNAME[L].toLowerCase():'in total'}). Tap a series to see its expansions.</p>`+html.join('')
+    document.getElementById('fres').innerHTML = cards? `<p>${cards} card${cards===1?'':'s'} (${copies} ${L?'in '+LN:'in total'}). Tap an expansion to see its cards.</p>`+html.join('')
       : `<p>${t.have?'Nothing you own matches.':'You haven\'t marked any cards as owned yet. Open an <a data-go="expansions">expansion</a> to start.'}</p>`;
-    document.querySelectorAll('#fres details.fser').forEach(d=>d.addEventListener('toggle',()=>{ if(!findQ.trim()) findOpen[d.dataset.ser]=d.open; }));
+    document.querySelectorAll('#fres tr.fexp-row').forEach(tr=>tr.onclick=e=>{ if(e.target.closest('a')) return; const id=tr.dataset.fset; const open=!tr.classList.contains('open');
+      tr.classList.toggle('open',open); tr.nextElementSibling.hidden=!open; tr.querySelector('.fx').textContent=open?'▾':'▸'; if(!findQ.trim()&&findRar===''&&!findTyp) findOpen[id]=open; });
   };
   el.querySelector('#fq').oninput=e=>{findQ=e.target.value; run();};
+  el.querySelector('#frar').onchange=e=>{findRar=e.target.value; run();};
+  el.querySelector('#ftyp').onchange=e=>{findTyp=e.target.value; run();};
   el.querySelector('#flseg').onclick=e=>{const b=e.target.closest('[data-l]'); if(!b) return; findLoc=b.dataset.l; el.querySelectorAll('#flseg .seg').forEach(x=>x.classList.toggle('on',x===b)); run();};
-  el.querySelector('#fexp').onclick=()=>{ T.series.forEach(n=>findOpen[n]=true); run(); };
+  el.querySelector('#fexp').onclick=()=>{ T.sets.forEach(s=>findOpen[s.id]=true); run(); };
   el.querySelector('#fcol').onclick=()=>{ findOpen={}; run(); };
   run();
 }
@@ -772,7 +865,8 @@ function findRow(s,r,e,L,n){
   const vr=L? (e[IX.r[L]]||0) : regN(e), vs=L? (e[IX.s[L]]||0) : spN(e);
   const ver=`${vr?`<span class="vb on">R</span>${vr>1?'×'+vr:''} `:''}${vs?`<span class="vb sp on">RH</span>${vs>1?'×'+vs:''}`:''}`;
   const where=L?'':`<td>${locsOf(e).map(([k,nm])=>`<span class="loc loc-${k}">${nm} ×${locN(e,k)}</span>`).join(' ')}</td>`;
-  return `<tr class="have"><td><a data-set="${s.id}">${esc(s.name)}</a></td><td class="c nw">${esc(r[1])}</td><td><b>${esc(r[2])}</b></td><td class="c"><b>${n}</b></td><td class="hide-m" style="font-size:12px">${esc(T.rar[r[3]]||'')}</td><td class="nw" style="font-size:12px">${ver}</td>${where}</tr>`;
+  const sup=T.sup[r[4]]||'', ty=T.typ[r[6]]||'';
+  return `<tr><td class="c nw">${esc(r[1])}</td><td><b>${esc(r[2])}</b></td><td class="c"><b>${n}</b></td><td class="hide-m nw" style="font-size:12px">${sup==='Pokémon'? typeDot(ty)+esc(ty) : esc(sup)}</td><td class="hide-m" style="font-size:12px">${esc(rarLabel(T.rar[r[3]]||''))}</td><td class="nw" style="font-size:12px">${ver}</td>${where}</tr>`;
 }
 
 /* ---------- Binder view (book) ---------- */
