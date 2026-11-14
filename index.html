@@ -79,6 +79,13 @@ button{font:inherit}
 .stps{display:flex;gap:6px;flex-wrap:wrap}
 .stp{display:flex;flex-direction:column;align-items:center;gap:1px}
 .stp .sl{font-size:10px;color:#777}
+.fser{margin:8px 0;border:2px solid var(--hb);border-radius:10px;background:var(--hc);overflow:hidden}
+.fser>summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:6px 12px;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.35)}
+.fser>summary::-webkit-details-marker{display:none}
+.fser>summary b::before{content:"▸ ";display:inline-block;transition:transform .15s}
+.fser[open]>summary b::before{content:"▾ "}
+.fser>summary span{font-size:12.5px;opacity:.95}
+.fser .roundy{border:none;border-radius:0;margin:0!important;padding:0 3px 3px}
 .shelf-sets{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
 details.cards>summary{cursor:pointer;font-weight:600;color:var(--link);margin:6px 0}
 #content{flex:1;min-width:0;background:#fff;border:1px solid var(--border);border-radius:0 12px 12px 12px;padding:18px 26px 30px;box-shadow:0 2px 12px rgba(0,0,0,.18)}
@@ -728,21 +735,44 @@ function cardTable(list,onlyLoc){
 }
 
 /* ---------- Find a card ---------- */
-let findQ='', findLoc='all';
+let findQ='', findLoc='all', findOpen={};
 function viewFind(el){
   const t=totals();
   el.innerHTML=`<h1 class="ft">Where's my card?</h1><div class="sub">Search everything you own and see where it is stored</div>
   <div class="toolbar"><input type="search" id="fq" placeholder="Card name, e.g. Charizard" value="${esc(findQ)}" style="width:260px">
-  <div class="grp" id="flseg">${[['all','Everywhere']].concat(LOCS).map(([k,n])=>`<button class="seg ${findLoc===k?'on':''}" data-l="${k}">${n}${k!=='all'?' ('+(t.byLoc[k]||0)+')':''}</button>`).join('')}</div></div>
+  <div class="grp" id="flseg">${[['all','Everywhere']].concat(LOCS).map(([k,n])=>`<button class="seg ${findLoc===k?'on':''}" data-l="${k}">${n}${k!=='all'?' ('+(t.copiesByLoc[k]||0)+')':''}</button>`).join('')}</div>
+  <span style="margin-left:auto"><button class="btn" id="fexp">Open all</button> <button class="btn" id="fcol">Close all</button></span></div>
   <div id="fres"></div>`;
   const run=()=>{
-    const q=findQ.trim().toLowerCase(); const out=[];
-    for(const s of T.sets){ const o=S.owned[s.id]; if(!o) continue; for(const r of T.cards[s.id]){ const e=o[r[0]]; if(!qn(e)) continue; if(findLoc!=='all'&&!(locN(e,findLoc)>0)) continue; if(q&&!r[2].toLowerCase().includes(q)) continue; out.push([s,r]); if(out.length>=600) break; } if(out.length>=600) break; }
-    document.getElementById('fres').innerHTML = out.length? `<p>${out.length>=600?'Showing the first 600 matches.':out.length+' card'+(out.length>1?'s':'')+' found.'}</p>`+cardTable(out,findLoc) : `<p>${t.have?'Nothing you own matches.':'You haven\'t marked any cards as owned yet. Open an <a data-go="expansions">expansion</a> to start.'}</p>`;
+    const q=findQ.trim().toLowerCase(); const L=findLoc==='all'?null:findLoc;
+    let cards=0, copies=0; const html=[];
+    T.series.forEach((ser,si)=>{
+      const rows=[]; let sc=0; const setsHit=new Set();
+      for(const s of SERIES_SETS[ser]){ const o=S.owned[s.id]; if(!o) continue;
+        for(const r of T.cards[s.id]){ const e=o[r[0]]; if(!qn(e)) continue; const n=L? locN(e,L) : qn(e); if(!n) continue;
+          if(q&&!r[2].toLowerCase().includes(q)) continue;
+          rows.push(findRow(s,r,e,L,n)); sc+=n; setsHit.add(s.id); } }
+      if(!rows.length) return;
+      cards+=rows.length; copies+=sc;
+      const open = q? true : !!findOpen[ser];
+      html.push(`<details class="fser" data-ser="${esc(ser)}" ${open?'open':''} style="${styleVars(ser)}"><summary><b>${esc(ser)}</b><span>${setsHit.size} expansion${setsHit.size===1?'':'s'} · ${rows.length} card${rows.length===1?'':'s'} · ${sc} ${L?'in '+LOCNAME[L].toLowerCase():'in total'}</span></summary>
+        <div class="roundy" style="margin:6px 0 4px"><table><tr><th>Expansion</th><th>No.</th><th>Card</th><th>#</th><th class="hide-m">Rarity</th><th>Version</th>${L?'':'<th>Where</th>'}</tr>${rows.join('')}</table></div></details>`);
+    });
+    document.getElementById('fres').innerHTML = cards? `<p>${cards} card${cards===1?'':'s'} (${copies} ${L?'in '+LOCNAME[L].toLowerCase():'in total'}). Tap a series to see its expansions.</p>`+html.join('')
+      : `<p>${t.have?'Nothing you own matches.':'You haven\'t marked any cards as owned yet. Open an <a data-go="expansions">expansion</a> to start.'}</p>`;
+    document.querySelectorAll('#fres details.fser').forEach(d=>d.addEventListener('toggle',()=>{ if(!findQ.trim()) findOpen[d.dataset.ser]=d.open; }));
   };
   el.querySelector('#fq').oninput=e=>{findQ=e.target.value; run();};
   el.querySelector('#flseg').onclick=e=>{const b=e.target.closest('[data-l]'); if(!b) return; findLoc=b.dataset.l; el.querySelectorAll('#flseg .seg').forEach(x=>x.classList.toggle('on',x===b)); run();};
+  el.querySelector('#fexp').onclick=()=>{ T.series.forEach(n=>findOpen[n]=true); run(); };
+  el.querySelector('#fcol').onclick=()=>{ findOpen={}; run(); };
   run();
+}
+function findRow(s,r,e,L,n){
+  const vr=L? (e[IX.r[L]]||0) : regN(e), vs=L? (e[IX.s[L]]||0) : spN(e);
+  const ver=`${vr?`<span class="vb on">R</span>${vr>1?'×'+vr:''} `:''}${vs?`<span class="vb sp on">RH</span>${vs>1?'×'+vs:''}`:''}`;
+  const where=L?'':`<td>${locsOf(e).map(([k,nm])=>`<span class="loc loc-${k}">${nm} ×${locN(e,k)}</span>`).join(' ')}</td>`;
+  return `<tr class="have"><td><a data-set="${s.id}">${esc(s.name)}</a></td><td class="c nw">${esc(r[1])}</td><td><b>${esc(r[2])}</b></td><td class="c"><b>${n}</b></td><td class="hide-m" style="font-size:12px">${esc(T.rar[r[3]]||'')}</td><td class="nw" style="font-size:12px">${ver}</td>${where}</tr>`;
 }
 
 /* ---------- Binder view (book) ---------- */
