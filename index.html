@@ -29,10 +29,10 @@ button{font:inherit}
 #logo .name{font-family:"Linux Libertine Display",Georgia,serif;font-size:22px;line-height:1.05}
 #logo .tag{font-size:11px;color:var(--muted)}
 #tabs{display:flex;gap:3px;flex:1;flex-wrap:wrap}
-#tabs a{background:linear-gradient(#fff,#eef3fa);border:1px solid var(--border);border-bottom:none;border-radius:8px 8px 0 0;padding:5px 14px;font-size:13px;color:var(--link)}
+#tabs a{background:linear-gradient(#fff,#eef3fa);border:1px solid var(--border);border-bottom:none;border-radius:8px 8px 0 0;padding:5px 11px;font-size:13px;white-space:nowrap;color:var(--link)}
 #tabs a.sel{background:#fff;color:#202122;font-weight:600;position:relative;top:1px}
 #search{margin-bottom:6px;display:flex;background:#fff;border:1px solid var(--border);border-radius:4px;overflow:hidden}
-#search input{border:none;padding:5px 9px;width:220px;font:inherit;outline:none}
+#search input{border:none;padding:5px 9px;width:170px;font:inherit;outline:none}
 #search button{border:none;border-left:1px solid var(--border);background:#f8f9fa;padding:0 10px;cursor:pointer}
 /* ---------- Layout ---------- */
 #wrap{max-width:1400px;margin:0 auto;display:flex;gap:16px;padding:0 18px 30px;align-items:flex-start}
@@ -109,6 +109,13 @@ tr.fexp-row.open td{background:var(--hl)}
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 #ctip{position:fixed;pointer-events:none;background:#202122;color:#fff;font-size:12px;padding:4px 8px;border-radius:5px;opacity:0;transition:opacity .1s;z-index:70;white-space:nowrap}
 .roundy .fxcell{width:22px;padding-left:8px!important;padding-right:0!important;color:#555;font-size:13px}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.mcard{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff;cursor:pointer;transition:transform .1s}
+.mcard:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.mimg{height:150px;background:#f4f6f8;display:grid;place-items:center;position:relative;overflow:hidden}
+.mimg img{width:100%;height:100%;object-fit:contain}
+.mqty{position:absolute;top:6px;right:6px;background:#202122;color:#fff;font-size:12px;font-weight:700;padding:1px 7px;border-radius:10px}
+.min{padding:8px 10px}
 .shelf-sets{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
 details.cards>summary{cursor:pointer;font-weight:600;color:var(--link);margin:6px 0}
 #content{flex:1;min-width:0;background:#fff;border:1px solid var(--border);border-radius:0 12px 12px 12px;padding:18px 26px 30px;box-shadow:0 2px 12px rgba(0,0,0,.18)}
@@ -253,6 +260,7 @@ canvas.preview{max-width:100%;border:1px solid #ccc;border-radius:4px;background
     <a data-go="shelf">My binders</a>
     <a data-go="binders">Binder workshop</a>
     <a data-go="find">Find a card</a>
+    <a data-go="merch">Sealed &amp; merch</a>
     <a data-go="prices">Prices</a>
     <a data-go="options">Options</a>
   </nav>
@@ -266,6 +274,7 @@ canvas.preview{max-width:100%;border:1px solid #ccc;border-radius:4px;background
       <li><a data-go="shelf">My binders</a></li>
       <li><a data-go="binders">Binder workshop</a></li>
       <li><a data-go="find">Where's my card?</a></li>
+      <li><a data-go="merch">Sealed &amp; merch</a></li>
       <li><a data-go="prices">Prices: sell &amp; buy</a></li>
       <li><a data-go="options">Wallpaper &amp; options</a></li>
     </ul></div>
@@ -317,7 +326,7 @@ function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t
 function uid(){return 'b'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 
 /* ================= STATE + STORAGE ================= */
-const S = { owned:{}, binders:{}, config:{}, images:{} };   // owned[setId][cardKey] = [qty, loc]
+const S = { owned:{}, binders:{}, config:{}, images:{}, items:{} };   // owned[setId][cardKey] = [qty, loc]
 let db=null, user=null, readOnly=false, mode='local';
 const dirty = {}; const writing = {}; const timers = {};
 const LS = 'collectapedia.v1';
@@ -333,7 +342,7 @@ function locsOf(e){ return e? LOCS.filter(([k])=>locN(e,k)>0) : []; }
 function normLoc(c){ for(const k in c){ const e=c[k]; if(!e) continue; if(typeof e[1]==='string'){ const n=[0,0,0]; const l=e[1]==='binder'?'binder':'bulk'; n[LI[l]]=e[0]||0; c[k]=n; }
     if(c[k][2]){ c[k][1]=(c[k][1]||0)+c[k][2]; c[k][2]=0; }
     if(c[k].length<5){ const b=c[k][0]||0, u=c[k][1]||0; const rB=b>0?1:0, rK=rB?0:(u>0?1:0); c[k]=[rB,rK,0,b-rB,u-rK]; } if(!qn(c[k])) delete c[k]; } return c; }
-function lsLoad(){try{const j=JSON.parse(localStorage.getItem(LS)||'null');if(j){S.owned=j.owned||{}; Object.values(S.owned).forEach(normLoc);S.binders=j.binders||{};S.config=j.config||{};S.images=j.images||{};}}catch(e){}}
+function lsLoad(){try{const j=JSON.parse(localStorage.getItem(LS)||'null');if(j){S.owned=j.owned||{}; Object.values(S.owned).forEach(normLoc);S.binders=j.binders||{};S.config=j.config||{};S.images=j.images||{};S.items=j.items||{};}}catch(e){}}
 function lsSave(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}}
 
 function queueWrite(key, fn){
@@ -403,6 +412,11 @@ async function initStorage(){
     snap.docChanges().forEach(ch=>{ const k='binders/'+ch.doc.id; if(dirty[k]) return;
       if(ch.type==='removed') delete S.binders[ch.doc.id]; else S.binders[ch.doc.id]=JSON.parse(JSON.stringify(ch.doc.data()||{})); });
     if(!snap.metadata.fromCache){got.b=true;done();}
+    if(!snap.metadata.hasPendingWrites) softRerender();
+  }, e=>{});
+  db.collection('items').onSnapshot(snap=>{
+    snap.docChanges().forEach(ch=>{ const k='items/'+ch.doc.id; if(dirty[k]) return;
+      if(ch.type==='removed') delete S.items[ch.doc.id]; else S.items[ch.doc.id]=JSON.parse(JSON.stringify(ch.doc.data()||{})); });
     if(!snap.metadata.hasPendingWrites) softRerender();
   }, e=>{});
   db.collection('images').onSnapshot(snap=>{
@@ -496,7 +510,7 @@ function textOn(hex){ const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return 
 
 /* ================= ROUTER ================= */
 let curView='home', curArg='';
-const views={prices:viewPrices,bview:viewBinderBook,shelf:viewShelf,home:viewHome,expansions:viewExpansions,binders:viewBinders,find:viewFind,options:viewOptions,set:viewSet,search:viewSearch};
+const views={merch:viewMerch,prices:viewPrices,bview:viewBinderBook,shelf:viewShelf,home:viewHome,expansions:viewExpansions,binders:viewBinders,find:viewFind,options:viewOptions,set:viewSet,search:viewSearch};
 function go(name){ if(location.hash==='#'+name) route(); else location.hash=name; }
 function parseHash(){
   const h=(location.hash||'').slice(1);
@@ -555,6 +569,69 @@ function totals(){
   T.sets.forEach(s=>{const st=setStats(s.id); have+=st.have; reg+=st.reg; total+=st.total; copies+=st.copies; got+=st.got; need+=st.need; full+=st.full; for(const k in st.byLoc){ byLoc[k]=(byLoc[k]||0)+st.byLoc[k]; copiesByLoc[k]=(copiesByLoc[k]||0)+st.copiesByLoc[k]; } if(st.have) started++; if(st.reg&&st.reg>=st.total) complete++; if(st.total&&st.full>=st.total) specialComplete++;});
   return {have,reg,total,copies,got,need,full,byLoc,copiesByLoc,started,complete,specialComplete};
 }
+/* ---------- Sealed & merch: packs, blisters, boxes, plushies, figures… ---------- */
+const ITEM_CATS=[['booster','Booster packs','🎴'],['blister','Blister packs','📦'],['etb','Elite Trainer Boxes','🎁'],['box','Booster boxes & bundles','🗃️'],['collection','Collection boxes & tins','🥫'],['promo','Promo & special cards','⭐'],['accessory','Binders, sleeves & accessories','🗂️'],['plush','Plushies','🧸'],['figure','Figures & toys','🗿'],['center','Pokémon Center items','🏬'],['other','Other','✨']];
+const CATNAME=Object.fromEntries(ITEM_CATS.map(c=>[c[0],c[1]])), CATICON=Object.fromEntries(ITEM_CATS.map(c=>[c[0],c[2]]));
+function saveItem(it){ S.items[it.id]=it; persist('items/'+it.id, ()=>S.items[it.id]||null); }
+function deleteItem(id){ delete S.items[id]; persist('items/'+id, ()=>null); removeImage('item-'+id,'photo',null); }
+function itemsForSet(setId){ return Object.values(S.items).filter(it=>it.set===setId); }
+let merchCat='all', merchQ='';
+function itemCard(it){
+  const u=imgURL('item-'+it.id,'photo'); const s=SETS[it.set];
+  return `<div class="mcard" data-item="${it.id}">
+    <div class="mimg">${u?`<img src="${esc(u)}" alt="" loading="lazy">`:`<span style="font-size:42px">${CATICON[it.cat]||'✨'}</span>`}${(+it.qty||1)>1?`<span class="mqty">×${+it.qty}</span>`:''}</div>
+    <div class="min"><b>${esc(it.name||'Untitled')}</b>
+      <div style="font-size:11.5px;color:#666;margin-top:2px">${esc(CATNAME[it.cat]||'Other')}${s?` · <a data-set="${s.id}">${esc(s.name)}</a>`:''}</div>
+      <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${it.cond?`<span class="tag ${it.cond==='sealed'?'ok':it.cond==='opened'?'mute':'warn'}">${esc({sealed:'Sealed',opened:'Opened',display:'On display',forsale:'For sale',wishlist:'Wishlist'}[it.cond]||it.cond)}</span>`:''}${it.loc?`<span class="tag mute">📍 ${esc(it.loc)}</span>`:''}${it.price?`<span class="tag mute">${esc(it.price)}</span>`:''}</div>
+      ${it.notes?`<div style="font-size:12px;color:#444;margin-top:4px">${esc(it.notes)}</div>`:''}</div></div>`;
+}
+function viewMerch(el){
+  const all=Object.values(S.items); const owned=all.filter(i=>i.cond!=='wishlist');
+  const totalQty=owned.reduce((a,i)=>a+(+i.qty||1),0);
+  const q=merchQ.trim().toLowerCase();
+  const list=all.filter(i=>(merchCat==='all'||(merchCat==='wishlist'? i.cond==='wishlist' : i.cat===merchCat&&i.cond!=='wishlist'))&&(!q||[i.name,i.notes,i.loc,(SETS[i.set]||{}).name].join(' ').toLowerCase().includes(q)));
+  el.innerHTML=`<h1 class="ft">Sealed &amp; merch</h1><div class="sub">Packs, blisters, boxes, tins, plushies, figures and Pokémon Center finds</div>
+  <p>${owned.length? `You have <b>${totalQty}</b> item${totalQty===1?'':'s'} here${all.length>owned.length?`, plus <b>${all.length-owned.length}</b> on your wishlist`:''}.` : 'Nothing here yet. Add your first pack, box or plushie.'}</p>
+  <div class="toolbar"><button class="btn pri rw" id="addItem">＋ Add item</button>
+    <input type="search" id="mq" placeholder="Search name, notes, place…" value="${esc(merchQ)}" style="width:220px">
+    <select id="mcat"><option value="all">All categories</option>${ITEM_CATS.map(([k,n,ic])=>{ const c=all.filter(i=>i.cat===k&&i.cond!=='wishlist').length; return `<option value="${k}" ${merchCat===k?'selected':''}>${ic} ${n}${c?` (${c})`:''}</option>`; }).join('')}<option value="wishlist" ${merchCat==='wishlist'?'selected':''}>💭 Wishlist (${all.length-owned.length})</option></select></div>
+  ${list.length? ITEM_CATS.concat([['wishlist','Wishlist','💭']]).map(([k,n,ic])=>{ const its=list.filter(i=> k==='wishlist'? i.cond==='wishlist' : i.cat===k&&i.cond!=='wishlist').sort((a,b)=>(SET_RANK[a.set]??1e9)-(SET_RANK[b.set]??1e9)||(a.name||'').localeCompare(b.name||'')); if(!its.length) return '';
+      return `<h2>${ic} ${esc(n)} <span style="font-size:13px;color:#666;font-family:'Open Sans',sans-serif">${its.reduce((a,i)=>a+(+i.qty||1),0)}</span></h2><div class="mgrid">${its.map(itemCard).join('')}</div>`; }).join('') : (all.length? '<p>Nothing matches.</p>' : '')}`;
+  const add=el.querySelector('#addItem'); if(add) add.onclick=()=>editItem(null);
+  el.querySelector('#mq').oninput=e=>{ merchQ=e.target.value; const y=window.scrollY; route(true); window.scrollTo(0,y); const i=document.getElementById('mq'); i.focus(); i.setSelectionRange(i.value.length,i.value.length); };
+  el.querySelector('#mcat').onchange=e=>{ merchCat=e.target.value; route(true); };
+  el.querySelectorAll('[data-item]').forEach(c=>c.onclick=e=>{ if(e.target.closest('a')) return; if(readOnly) viewItem(c.dataset.item); else editItem(c.dataset.item); });
+}
+function viewItem(id){ const it=S.items[id]; if(!it) return; const u=imgURL('item-'+id,'photo');
+  openModal(it.name||'Item', `<div style="text-align:center">${u?`<img src="${esc(u)}" style="max-width:100%;max-height:60vh;border-radius:8px">`:''}</div>${itemCard(it)}`, [mkBtn('Close','pri',closeModal)]); }
+function editItem(id,presetSet){
+  if(readOnly) return;
+  const isNew=!id; const it=isNew? {id:'i'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:'', cat:'booster', qty:1, cond:'sealed', set:presetSet||'', loc:'', price:'', date:'', notes:''} : JSON.parse(JSON.stringify(S.items[id]));
+  let photo=null; const u=isNew?null:imgURL('item-'+it.id,'photo');
+  const body=`<div class="form">
+    <label>Name</label><input type="text" id="iName" value="${esc(it.name)}" placeholder="e.g. Surging Sparks booster pack, Snorlax plush">
+    <label>Category</label><select id="iCat">${ITEM_CATS.map(([k,n,ic])=>`<option value="${k}" ${it.cat===k?'selected':''}>${ic} ${n}</option>`).join('')}</select>
+    <label>Status</label><select id="iCond">${[['sealed','Sealed'],['opened','Opened'],['display','On display'],['forsale','For sale'],['wishlist','Wishlist (don\'t have it yet)']].map(([k,n])=>`<option value="${k}" ${it.cond===k?'selected':''}>${n}</option>`).join('')}</select>
+    <label>Quantity</label><input type="number" id="iQty" min="1" value="${+it.qty||1}" style="width:80px">
+    <label>Expansion</label><select id="iSet"><option value="">(none)</option>${T.series.map(n=>`<optgroup label="${esc(n)}">${SERIES_SETS[n].map(s=>`<option value="${s.id}" ${it.set===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</optgroup>`).join('')}</select>
+    <label>Where it is</label><input type="text" id="iLoc" value="${esc(it.loc)}" placeholder="e.g. Shelf, closet, display case">
+    <label>Price paid</label><input type="text" id="iPrice" value="${esc(it.price)}" placeholder="e.g. $5.99 or €40" style="width:140px">
+    <label>Date</label><input type="date" id="iDate" value="${esc(it.date||'')}" style="width:160px">
+    <label>Notes</label><textarea id="iNotes" rows="2">${esc(it.notes)}</textarea>
+    <label>Photo</label><div><div id="iPrev" style="margin-bottom:6px">${u?`<img src="${esc(u)}" style="max-height:120px;border-radius:6px">`:''}</div><label class="btn" style="cursor:pointer">📷 ${u?'Change':'Add'} photo<input type="file" id="iPhoto" accept="image/*" hidden></label>${u?' <a id="iRmPhoto" style="color:var(--bad);font-size:12.5px">Remove photo</a>':''}</div>
+  </div>`;
+  const read=()=>{ const g=x=>document.getElementById(x); it.name=g('iName').value.trim(); it.cat=g('iCat').value; it.cond=g('iCond').value; it.qty=Math.max(1,+g('iQty').value||1); it.set=g('iSet').value; it.loc=g('iLoc').value.trim(); it.price=g('iPrice').value.trim(); it.date=g('iDate').value; it.notes=g('iNotes').value.trim(); };
+  const foot=[];
+  if(!isNew) foot.push(mkBtn('Delete','danger',()=>{ if(!confirmInline('Delete this item?')) return; deleteItem(it.id); closeModal(); toast('Item deleted'); }));
+  foot.push(mkBtn('Cancel','',closeModal));
+  foot.push(mkBtn(isNew?'Add item':'Save','pri',async()=>{ read(); if(!it.name) it.name=CATNAME[it.cat]; saveItem(it);
+    if(photo){ toast('Uploading photo…'); try{ await storeImage('item-'+it.id,'photo',null,photo); }catch(e){ toast('Photo upload failed'); } }
+    closeModal(); toast(isNew?'Item added':'Saved'); }));
+  openModal(isNew?'Add to sealed & merch':'Edit item', body, foot);
+  document.getElementById('iPhoto').onchange=e=>{ photo=e.target.files[0]; if(photo) document.getElementById('iPrev').innerHTML=`<img src="${URL.createObjectURL(photo)}" style="max-height:120px;border-radius:6px">`; };
+  const rp=document.getElementById('iRmPhoto'); if(rp) rp.onclick=async()=>{ await removeImage('item-'+it.id,'photo',null); document.getElementById('iPrev').innerHTML=''; rp.remove(); };
+}
+
 /* ---------- Prices (TCGplayer USD + Cardmarket EUR via the free pokemontcg.io API) ---------- */
 // Cache per expansion in this browser for 24 h: PRICES[setId] = {t:time, c:{cardKey:[tcgReg,tcgRev,cmReg,cmRev,tcgUrl,cmUrl]}}
 const PRICE_KEY='collectapedia.prices.v1', PRICE_TTL=24*3600*1000;
@@ -847,6 +924,8 @@ function viewSet(el,id,soft){
   <p><b>${esc(s.name)}</b> ${s.code?`(<i>${esc(s.code)}</i>) `:''}is ${ordinal} of the Pokémon Trading Card Game. It ${s.release>TODAY?'releases':'was released'} on ${fmtDate(s.release)}. The set has ${s.printed} numbered cards${extra?`, plus ${extra} secret rares and extra cards for ${cards.length} in total`:''}${s.subs.length?`, including the ${s.subs.map(x=>esc(x[0])).join(' and ')} subset${s.subs.length>1?'s':''}`:''}.</p>
   <p>You have <b>${st.copies}</b> card${st.copies===1?'':'s'} from this set: <b>${st.have}</b> of its ${cards.length} unique cards. <b>Regular set:</b> ${st.reg} of ${cards.length} (${pctTxt(st.reg,cards.length)}%). <b>Special set</b> (reverse holos, holos and 2nd copies): ${st.full} of ${cards.length} (${pctTxt(st.full,cards.length)}%).${st.have?` Where they are: `+LOCS.filter(([k])=>st.copiesByLoc[k]).map(([k,n])=>`<span class="loc loc-${k}">${n}</span> ${st.copiesByLoc[k]} cop${st.copiesByLoc[k]===1?'y':'ies'} (${st.byLoc[k]} unique)`).join(' &nbsp; ') : ''}</p>
   ${bs.length? bs.map(b=>{const x=binderStatus(b);return `<p class="hat">Binder: <b>${esc(b.name)}</b> ${x.ready?'<span class="tag ok">ready</span>':`<span class="tag warn">to do: ${esc(x.todo.join(', '))}</span>`} · ${x.c.inBinder} of this set's cards marked as in the binder.</p>`;}).join(''):''}
+  ${(()=>{ const its=itemsForSet(id); return its.length? `<h2>Sealed &amp; merch from this expansion</h2><div class="mgrid">${its.map(itemCard).join('')}</div>` : ''; })()}
+  <p class="rw" style="font-size:12.5px"><a id="addSetItem">＋ Add a pack, box or other item from ${esc(s.name)}</a></p>
   <h2>Rarity breakdown</h2>
   <div class="roundy" style="${styleVars(s.series)};display:inline-block;min-width:320px"><table><tr><th>Rarity</th><th>In set</th><th>Owned</th></tr>
   ${Object.entries(rarCount).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="c">${v[0]}</td><td class="c">${v[1]}</td></tr>`).join('')}</table></div>
@@ -875,6 +954,8 @@ function viewSet(el,id,soft){
   el.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>pickFile(f=>storeImage(id,b.dataset.up,null,f).then(()=>route(true))));
   el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ if(!confirmInline('Remove this picture?')) return; removeImage(id,b.dataset.rm,null).then(()=>route(true)); });
   el.querySelector('#gallery').addEventListener('click',e=>{const c=e.target.closest('[data-card]'); if(c) cardModal(id,c.dataset.card);});
+  const asi=el.querySelector('#addSetItem'); if(asi) asi.onclick=()=>editItem(null,id);
+  el.querySelectorAll('[data-item]').forEach(c=>c.onclick=e=>{ if(e.target.closest('a')) return; if(readOnly) viewItem(c.dataset.item); else editItem(c.dataset.item); });
   const mk=el.querySelector('#mkBinder'); if(mk) mk.onclick=()=>editBinder(null,[id]);
   el.querySelector('#setRows').addEventListener('click',e=>{const b=e.target.closest('button[data-q]'); if(!b||readOnly) return; changeQty(id,b.closest('tr').dataset.k,b.dataset.l,+b.dataset.q,b.dataset.v);});
   el.querySelector('#setRows').addEventListener('click',e=>{const c=e.target.closest('[data-card]'); if(c) cardModal(id,c.dataset.card);});
@@ -1414,11 +1495,11 @@ function viewOptions(el){
   const wc=el.querySelector('#wcol'); if(wc) wc.onchange=()=>{ S.config.wallColor=wc.value; saveConfig(); };
   const wsc=el.querySelector('#wscroll'); if(wsc) wsc.onchange=()=>{ S.config.wallScroll=wsc.checked; saveConfig(); };
   el.querySelector('#stsave').onclick=()=>{ S.config.title=document.getElementById('stitle').value.trim()||'My Collectapedia'; saveConfig(); toast('Saved'); };
-  el.querySelector('#bcopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(JSON.stringify({v:1,owned:S.owned,binders:S.binders,config:Object.assign({},S.config,{wall:undefined})})); toast('Backup copied to clipboard'); }catch(e){ toast('Copy was blocked by the browser'); } };
+  el.querySelector('#bcopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(JSON.stringify({v:1,owned:S.owned,binders:S.binders,items:S.items,config:Object.assign({},S.config,{wall:undefined})})); toast('Backup copied to clipboard'); }catch(e){ toast('Copy was blocked by the browser'); } };
   el.querySelector('#bshow').onclick=()=>{ document.getElementById('brest').style.display='block'; };
   el.querySelector('#bgo').onclick=()=>{ try{ const j=JSON.parse(document.getElementById('btxt').value); if(!j.owned) throw 0; if(!confirmInline('Replace your collection with this backup?')) return;
       Object.keys(S.owned).forEach(k=>{ if(!j.owned[k]){ delete S.owned[k]; saveSet(k);} }); Object.keys(j.owned).forEach(k=>{ S.owned[k]=normLoc(j.owned[k]); saveSet(k); });
-      Object.keys(S.binders).forEach(k=>{ if(!(j.binders||{})[k]) deleteBinder(k); }); Object.values(j.binders||{}).forEach(saveBinder);
+      Object.keys(S.binders).forEach(k=>{ if(!(j.binders||{})[k]) deleteBinder(k); }); Object.values(j.binders||{}).forEach(saveBinder); Object.values(j.items||{}).forEach(saveItem);
       toast('Backup restored'); route(true); }catch(e){ toast('That doesn\'t look like a backup'); } };
 }
 function shrinkImage(file,max){ return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ const s=Math.min(1,max/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*s); c.height=Math.round(img.height*s); c.getContext('2d').drawImage(img,0,0,c.width,c.height); res(c.toDataURL('image/jpeg',0.82)); URL.revokeObjectURL(img.src); }; img.onerror=rej; img.src=URL.createObjectURL(file); }); }
@@ -1455,7 +1536,7 @@ function logoFor(b,asImage){ const id=(b.sets||[]).find(x=>imgURL(x,'logo')); if
 function saveImages(setId){ if(mode==='local'){ lsSave(); return; } persist('images/'+setId, ()=>{ const m=S.images[setId]; return m&&(Object.keys(m).some(k=>k!=='cards'&&k!=='listPdf'&&m[k])||Object.keys(m.cards||{}).length)? m : null; }); }
 function pickFile(cb,multiple,accept){ const i=document.createElement('input'); i.type='file'; i.accept=accept||'image/*'; if(multiple) i.multiple=true; i.onchange=()=>{ if(i.files.length) cb(multiple?[...i.files]:i.files[0]); }; i.click(); }
 function resizeImage(file,maxW,maxH){ return new Promise((res)=>{ const img=new Image(); img.onload=()=>{ const r=Math.min(1,maxW/img.width,maxH/img.height); if(r>=1 && file.size<400000){ URL.revokeObjectURL(img.src); res(file); return; } const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); c.toBlob(b=>res(b||file),'image/webp',0.86); }; img.onerror=()=>res(file); img.src=URL.createObjectURL(file); }); }
-const IMG_MAX={card:[500,700],logo:[700,300],sym:[160,160],cover:[1000,1300],spine:[400,1700],list:[1700,2400]};
+const IMG_MAX={card:[500,700],logo:[700,300],sym:[160,160],cover:[1000,1300],spine:[400,1700],list:[1700,2400],photo:[1000,1000]};
 async function storeImage(setId,kind,cardKey,file){
   if(readOnly) return;
   const isPdf=file.type==='application/pdf'||/\.pdf$/i.test(file.name||'');
@@ -1578,13 +1659,14 @@ function applyRow(path,data){
   const i=path.indexOf('/'); const c=path.slice(0,i), id=path.slice(i+1);
   if(c==='owned'){ if(data) S.owned[id]=normLoc(JSON.parse(JSON.stringify(data.c||{}))); else delete S.owned[id]; }
   else if(c==='binders'){ if(data) S.binders[id]=data; else delete S.binders[id]; }
+  else if(c==='items'){ if(data) S.items[id]=data; else delete S.items[id]; }
   else if(c==='images'){ if(data) S.images[id]=data; else delete S.images[id]; }
   else if(c==='config'){ S.config=data||{}; applyConfig(); }
 }
 async function initSupa(SC){
   mode='supa'; setReadOnly(true);
-  localSnapshot=JSON.parse(JSON.stringify({owned:S.owned,binders:S.binders,config:S.config,images:S.images}));
-  S.owned={}; S.binders={}; S.images={}; S.config={};
+  localSnapshot=JSON.parse(JSON.stringify({owned:S.owned,binders:S.binders,config:S.config,images:S.images,items:S.items}));
+  S.owned={}; S.binders={}; S.images={}; S.config={}; S.items={};
   document.getElementById('view').innerHTML='<p style="padding:30px;text-align:center;color:#666">Loading collection…</p>';
   try{
     if(!window.supabase) await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');
@@ -1608,7 +1690,7 @@ async function initSupa(SC){
     }).subscribe();
   }catch(e){}
 }
-function localCounts(){ const L=localSnapshot||{}; let cards=0, pics=0; Object.values(L.owned||{}).forEach(c=>cards+=Object.keys(c).length); Object.values(L.images||{}).forEach(m=>{ ['sym','logo','cover','spine'].forEach(k=>{ if(m[k]==='i') pics++; }); Object.values(m.cards||{}).forEach(v=>{ if(v==='i') pics++; }); }); return {cards,pics,binders:Object.keys(L.binders||{}).length}; }
+function localCounts(){ const L=localSnapshot||{}; let cards=0, pics=0; Object.values(L.owned||{}).forEach(c=>cards+=Object.keys(c).length); Object.values(L.images||{}).forEach(m=>{ ['sym','logo','cover','spine'].forEach(k=>{ if(m[k]==='i') pics++; }); Object.values(m.cards||{}).forEach(v=>{ if(v==='i') pics++; }); }); return {cards,pics,binders:Object.keys(L.binders||{}).length+Object.keys(L.items||{}).length}; }
 function migrationDone(){ try{ return localStorage.getItem('collectapedia.movedOnline')==='1'; }catch(e){ return false; } }
 function supaBanner(){
   if(supaUser){
@@ -1627,6 +1709,7 @@ async function moveOnline(){
     // counts: merge (keep the higher count in each place)
     for(const [sid,c] of Object.entries(L.owned||{})){ const cur=S.owned[sid]||(S.owned[sid]={}); for(const [k,e] of Object.entries(c)){ const o=cur[k]||[0,0,0,0,0]; cur[k]=[0,1,2,3,4].map(i=>Math.max(o[i]||0,e[i]||0)); } saveSet(sid); }
     for(const b of Object.values(L.binders||{})){ if(!S.binders[b.id]) saveBinder(b); }
+    for(const it of Object.values(L.items||{})){ if(!S.items[it.id]) saveItem(it); }
     if(!S.config.title && L.config && L.config.title){ S.config.title=L.config.title; S.config.wallColor=L.config.wallColor; saveConfig(); }
     // pictures from this browser's storage
     const jobs=[]; for(const [sid,m] of Object.entries(L.images||{})){ ['sym','logo','cover','spine'].forEach(k=>{ if(m[k]==='i') jobs.push([sid,k,null]); }); Object.entries(m.cards||{}).forEach(([ck,v])=>{ if(v==='i') jobs.push([sid,'card',ck]); }); }
