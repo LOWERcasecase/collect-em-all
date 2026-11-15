@@ -108,6 +108,7 @@ tr.fexp-row.open td{background:var(--hl)}
 .sbl{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;margin-top:5px}
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 #ctip{position:fixed;pointer-events:none;background:#202122;color:#fff;font-size:12px;padding:4px 8px;border-radius:5px;opacity:0;transition:opacity .1s;z-index:70;white-space:nowrap}
+.roundy .fxcell{width:22px;padding-left:8px!important;padding-right:0!important;color:#555;font-size:13px}
 .shelf-sets{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
 details.cards>summary{cursor:pointer;font-weight:600;color:var(--link);margin:6px 0}
 #content{flex:1;min-width:0;background:#fff;border:1px solid var(--border);border-radius:0 12px 12px 12px;padding:18px 26px 30px;box-shadow:0 2px 12px rgba(0,0,0,.18)}
@@ -520,9 +521,9 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-go]'); if(a){e.preventDefault(); go(a.dataset.go); return;}
   const bd=e.target.closest('[data-binder]'); if(bd){e.preventDefault(); const t=()=>{const el=document.getElementById('bin-'+bd.dataset.binder); if(el){ el.scrollIntoView({behavior:'smooth'}); const d=el.querySelector('details.cards'); if(d) d.open=true; }}; if(curView!=='shelf'){ go('shelf'); setTimeout(t,60);} else t(); return;}
   const bp=e.target.closest('[data-bpic]'); if(bp){ e.preventDefault(); const [act,bid,kind]=bp.dataset.bpic.split('|');
-    if(act==='up') pickFile(async f=>{ toast('Uploading…'); try{ await storeImage(bpKey(bid),kind,null,f); toast(kind==='list'?'Card list saved':'Picture saved'); }catch(err){ toast('Upload failed'); } route(true); }, false, kind==='list'?'image/*,application/pdf':'image/*');
-    else if(act==='rm'){ if(confirmInline('Remove this picture?')) removeImage(bpKey(bid),kind,null).then(()=>route(true)); }
-    else if(act==='view'){ const b=S.binders[bid]; openModal(`${b?b.name:'Binder'} · ${kind==='cover'?'cover':kind==='list'?'card list':'spine'}`, `<div style="text-align:center"><img src="${esc(imgURL(bpKey(bid),kind))}" style="max-width:100%;max-height:75vh;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.25)"></div>`, [mkBtn('Close','pri',closeModal)]); }
+    if(act==='up'||act==='upimg') pickFile(async f=>{ try{ await uploadBinderFile(bid,kind,f,act==='upimg'); }catch(err){ toast('Upload failed'); } route(true); }, false, act==='upimg'?'image/*':'image/*,application/pdf');
+    else if(act==='rm'){ if(confirmInline('Remove this '+SLOT_LABEL[kind].toLowerCase()+' (PDF and preview)?')) Promise.all([removeImage(bpKey(bid),kind,null), removeImage(bpKey(bid),'pdf'+kind,null)]).then(()=>route(true)); }
+    else if(act==='view'){ const b=S.binders[bid]; openModal(`${b?b.name:'Binder'} · ${SLOT_LABEL[kind].toLowerCase()}`, `<div style="text-align:center"><img src="${esc(imgURL(bpKey(bid),kind))}" style="max-width:100%;max-height:75vh;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.25)"></div>`, [mkBtn('Close','pri',closeModal)]); }
     return; }
   const s=e.target.closest('[data-set]'); if(s){e.preventDefault(); go('set-'+s.dataset.set); return;}
   const sc_=e.target.closest('[data-scroll]'); if(sc_){e.preventDefault(); const tgt=()=>{const t=document.getElementById(sc_.dataset.scroll); if(t) t.scrollIntoView({behavior:'smooth'});}; if(curView!=='expansions'){ go('expansions'); setTimeout(tgt,60);} else tgt(); }
@@ -686,10 +687,10 @@ function viewPrices(el){
         ex.push({s,rows,st,sc}); });
       if(!ex.length) return;
       blocks.push(`<h2>${esc(ser)}</h2><div class="roundy" style="${styleVars(ser)}"><table>
-        <tr><th class="hide-m">Logo</th><th>Expansion</th><th>Cards</th><th>TCGplayer</th><th>Cardmarket</th></tr>
+        <tr><th class="fxcell"></th><th class="hide-m">Logo</th><th>Expansion</th><th>Cards</th><th>TCGplayer</th><th>Cardmarket</th></tr>
         ${ex.map(x=>{ const open=!!prScope||!!prOpen[x.s.id];
-          return `<tr class="fexp-row ${open?'open':''}" data-pset="${x.s.id}" style="cursor:pointer"><td class="c hide-m">${imgTag(x.s.id,'logo',null,'max-height:28px;max-width:100px')}</td><td><span class="fx">${open?'▾':'▸'}</span> <b>${esc(x.s.name)}</b>${PRICES[x.s.id]&&Object.keys(PRICES[x.s.id].c).length?'':' <span class="tag mute">no prices loaded</span>'}</td><td class="c">${x.rows.reduce((a,y)=>a+y.q,0)}</td><td class="c"><b>${money(x.st,'USD')}</b></td><td class="c"><b>${money(x.sc,'EUR')}</b></td></tr>
-          <tr ${open?'':'hidden'}><td colspan="5" style="padding:0 0 6px 18px;background:#fbfbfd"><table class="inner"><tr><th>No.</th><th>Card</th><th>Version</th><th>${prMode==='buy'?'Need':'Qty'}</th><th>TCGplayer</th><th>Cardmarket</th><th class="hide-m">Rarity</th><th>Compare</th></tr>
+          return `<tr class="fexp-row ${open?'open':''}" data-pset="${x.s.id}" style="cursor:pointer"><td class="c fxcell"><span class="fx">${open?'▾':'▸'}</span></td><td class="c hide-m">${imgTag(x.s.id,'logo',null,'max-height:28px;max-width:100px')}</td><td><b>${esc(x.s.name)}</b>${PRICES[x.s.id]&&Object.keys(PRICES[x.s.id].c).length?'':' <span class="tag mute">no prices loaded</span>'}</td><td class="c">${x.rows.reduce((a,y)=>a+y.q,0)}</td><td class="c"><b>${money(x.st,'USD')}</b></td><td class="c"><b>${money(x.sc,'EUR')}</b></td></tr>
+          <tr ${open?'':'hidden'}><td colspan="6" style="padding:0 0 6px 18px;background:#fbfbfd"><table class="inner"><tr><th>No.</th><th>Card</th><th>Version</th><th>${prMode==='buy'?'Need':'Qty'}</th><th>TCGplayer</th><th>Cardmarket</th><th class="hide-m">Rarity</th><th>Compare</th></tr>
           ${x.rows.map(y=>`<tr><td class="c nw">${esc(y.r[1])}</td><td><div style="display:flex;align-items:center;gap:6px">${imgTag(x.s.id,'card',y.r[0],'height:30px;border-radius:2px')}<b>${esc(y.r[2])}</b></div></td><td class="nw">${y.v==='r'?'<span class="vb on">R</span> Regular':'<span class="vb sp on">RH</span> Reverse holo'}</td><td class="c">${y.q}</td><td class="c nw">${money(y.pt,'USD')}${y.q>1&&y.pt?`<div style="font-size:11px;color:#777">${money(y.pt*y.q,'USD')} total</div>`:''}</td><td class="c nw">${money(y.pc,'EUR')}${y.q>1&&y.pc?`<div style="font-size:11px;color:#777">${money(y.pc*y.q,'EUR')} total</div>`:''}</td><td class="hide-m" style="font-size:12px">${esc(rarLabel(T.rar[y.r[3]]||''))}</td><td style="font-size:11.5px">${shopLinks(x.s,y.r,x.s.id,y.r[0])}</td></tr>`).join('')}</table></td></tr>`; }).join('')}
       </table></div>`);
     });
@@ -1002,15 +1003,16 @@ function viewFind(el){
         if(rows.length) exp.push({s,rows,n,byL}); }
       if(!exp.length) return;
       const sc=exp.reduce((a,x)=>a+x.n,0), sr=exp.reduce((a,x)=>a+x.rows.length,0); cards+=sr; copies+=sc;
-      const cols=PULL?7:L?6:7;
+      const cols=(PULL?7:L?6:7)+1;
       html.push(`<h2 id="fser${si}">${esc(ser)} <span style="font-size:13px;color:#666;font-family:'Open Sans',sans-serif">${sr} card${sr===1?'':'s'} · ${sc} ${PULL?'to move':L?'in '+LN:'in total'}</span></h2>
       <div class="roundy" style="${styleVars(ser)}"><table>
-        <tr><th class="hide-m">Symbol</th><th class="hide-m">Logo</th><th>Expansion</th><th class="hide-m">Code</th><th>Cards</th><th>${PULL?'To move':'#'}</th>${L&&!PULL?'':'<th>'+(PULL?'Binder':'Where')+'</th>'}</tr>
+        <tr><th class="fxcell"></th><th class="hide-m">Symbol</th><th class="hide-m">Logo</th><th>Expansion</th><th class="hide-m">Code</th><th>Cards</th><th>${PULL?'To move':'#'}</th>${L&&!PULL?'':'<th>'+(PULL?'Binder':'Where')+'</th>'}</tr>
         ${exp.map(x=>{ const open=filtered? true : !!findOpen[x.s.id];
           return `<tr class="fexp-row ${open?'open':''}" data-fset="${x.s.id}" style="cursor:pointer">
+            <td class="c fxcell"><span class="fx">${open?'▾':'▸'}</span></td>
             <td class="c hide-m">${imgTag(x.s.id,'sym',null,'max-height:24px;max-width:36px')}</td>
             <td class="c hide-m">${imgTag(x.s.id,'logo',null,'max-height:30px;max-width:100px')}</td>
-            <td><span class="fx">${open?'▾':'▸'}</span> <b>${esc(x.s.name)}</b></td>
+            <td><b>${esc(x.s.name)}</b></td>
             <td class="c hide-m">${x.s.code?`<span class="code">${esc(x.s.code)}</span>`:''}</td>
             <td class="c">${x.rows.length}</td><td class="c"><b>${x.n}</b></td>
             ${PULL? `<td style="font-size:12px">${bindersForSet(x.s.id).map(b=>esc(b.name)).join(', ')||'<span style="color:#999">No binder yet</span>'}</td>` : L?'':`<td>${LOCS.filter(([k])=>x.byL[k]).map(([k,nm])=>`<span class="loc loc-${k}">${nm} ×${x.byL[k]}</span>`).join(' ')}</td>`}</tr>
@@ -1073,7 +1075,6 @@ function viewBinderBook(el,id){
     return `<div class="pocket ${has?'':'no'} v${x.v}" data-pk="${esc(x.s.id)}|${esc(x.r[0])}" title="${esc(x.r[2])} · ${esc(x.r[1])}${x.vname?' · '+esc(x.vname):''}${has?'':' (missing)'}">
       ${u?`<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:`<div class="ph" style="${has&&ty?`background:${TYPE_COLORS[ty]}33`:''}"><span style="color:#888">${esc(x.r[1])}</span><b>${esc(x.r[2])}</b></div>`}
       ${x.vname?`<div class="vt">${esc(x.vname)}</div>`:''}</div>`; };
-  const coverU=imgURL(bpKey(b.id),'cover'), spineU=imgURL(bpKey(b.id),'spine'), listU=imgURL(bpKey(b.id),'list');
   el.innerHTML=`<h1 class="ft">${esc(b.name)}: binder view</h1><div class="sub"><a data-go="shelf">My binders</a> · <a data-go="binders">Binder workshop</a></div>
   <div class="toolbar">
     <span>Colour cards that are</span><div class="grp" id="bvColor"><button class="seg ${b.colorBy!=='owned'?'on':''}" data-c="binder">In the binder</button><button class="seg ${b.colorBy==='owned'?'on':''}" data-c="owned">Owned anywhere</button></div>
@@ -1083,9 +1084,9 @@ function viewBinderBook(el,id){
   <p style="font-size:12.5px;color:#555">Each card gets ${+(b.copies??2)} pocket${+(b.copies??2)>1?'s':''} (${slotNames(b).slice(0,+(b.copies??2)).join(', then ')})${b.secretSingle===true?'; secret and extra cards get one':'. Cards that only come in one version (full arts, secret rares and so on) get 2 copies'}. A pocket is in colour when your ${b.colorBy==='owned'?'total count':'<span class="loc loc-binder">Binder</span> count'} for that card covers it: 1 fills the first pocket, 2 fills both. Click any pocket to change its count or how many pockets that card gets.</p>
   <h2>Front label, spine &amp; card list</h2>
   <div class="covers">
-    <figure>${coverU?`<img src="${esc(coverU)}" style="max-height:300px;max-width:260px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.3)">`:`<canvas id="bvFront" class="preview" style="max-width:260px"></canvas>`}<figcaption>Front label${coverU?' (your picture)':''} · ${b.front==='printed'?'<span class="tag ok">printed</span>':b.front==='none'?'<span class="tag mute">not needed</span>':'<span class="tag warn">need to print</span>'}</figcaption></figure>
-    <figure>${spineU?`<img src="${esc(spineU)}" style="max-height:300px;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.3)">`:`<canvas id="bvSpine" class="preview" style="max-height:300px"></canvas>`}<figcaption>Spine label${spineU?' (your picture)':''} · ${b.spine==='printed'?'<span class="tag ok">printed</span>':b.spine==='none'?'<span class="tag mute">not needed</span>':'<span class="tag warn">need to print</span>'}</figcaption></figure>
-    <figure>${listU? (listIsPdf(b.id)? `<a href="${esc(listU)}" target="_blank" rel="noopener" style="display:grid;place-items:center;width:160px;height:200px;border:1px solid #ccd;border-radius:6px;background:#f7f7fb;text-decoration:none">📄<br>Open card list (PDF)</a>` : `<img src="${esc(listU)}" data-bpic="view|${b.id}|list" style="max-height:300px;max-width:240px;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:zoom-in">`) : `<div data-bpic="up|${b.id}|list" class="rw" style="width:160px;height:200px;border:2px dashed #ccd;border-radius:6px;display:grid;place-items:center;color:#889;font-size:12px;cursor:pointer;text-align:center">＋ Upload card list<br>(picture or PDF)</div>`}<figcaption>Card list${listU?` · <a class="rw" data-bpic="up|${b.id}|list">Change</a> · <a class="rw" data-bpic="rm|${b.id}|list" style="color:var(--bad)">Remove</a>`:''}</figcaption></figure>
+    ${(()=>{ const f=bpSlot(b,'cover',260,300,!readOnly,`<canvas id="bvFront" class="preview" style="max-width:260px"></canvas>`); return `<figure>${f.box}<figcaption>Front label${bpPrev(b.id,'cover')||bpPdf(b.id,'cover')?' (yours)':' (generated)'} · ${b.front==='printed'?'<span class="tag ok">printed</span>':b.front==='none'?'<span class="tag mute">not needed</span>':'<span class="tag warn">need to print</span>'}<div style="font-weight:400;font-size:11.5px;margin-top:3px">${f.links}</div></figcaption></figure>`; })()}
+    ${(()=>{ const f=bpSlot(b,'spine',120,300,!readOnly,`<canvas id="bvSpine" class="preview" style="max-height:300px"></canvas>`); return `<figure>${f.box}<figcaption>Spine label${bpPrev(b.id,'spine')||bpPdf(b.id,'spine')?' (yours)':' (generated)'} · ${b.spine==='printed'?'<span class="tag ok">printed</span>':b.spine==='none'?'<span class="tag mute">not needed</span>':'<span class="tag warn">need to print</span>'}<div style="font-weight:400;font-size:11.5px;margin-top:3px">${f.links}</div></figcaption></figure>`; })()}
+    ${(()=>{ const f=bpSlot(b,'list',240,300,!readOnly); return f.box? `<figure>${f.box}<figcaption>Card list<div style="font-weight:400;font-size:11.5px;margin-top:3px">${f.links}</div></figcaption></figure>` : ''; })()}
     <div style="font-size:12.5px;color:#555;max-width:280px">${c.sets.map(id=>`<div><a data-set="${id}">${esc(SETS[id].name)}</a> <span class="code">${esc(SETS[id].code)}</span></div>`).join('')}<div style="margin-top:6px">${c.have} of ${c.need} sheets on hand${c.short?` · <span style="color:var(--warn)">need ${c.short} more</span>`:''}</div></div>
   </div>
   <h2>Pages</h2>
@@ -1154,7 +1155,7 @@ function shelfBinderHTML(b){
   return `<div class="binder" id="bin-${b.id}" style="${styleVars(ser)};margin-top:18px">
     <div class="bh"><b>${esc(b.name)}</b>${b.haveBinder?'<span class="tag ok">On the shelf</span>':'<span class="tag warn">Need to buy</span>'}<a class="btn" data-go="view-${b.id}" style="text-shadow:none">📖 Binder view</a><a class="btn" data-go="binders" style="text-shadow:none">Workshop</a></div>
     <div style="background:#fff;border-radius:9px;padding:10px 12px">
-      ${(imgURL(bpKey(b.id),'cover')||imgURL(bpKey(b.id),'spine')||imgURL(bpKey(b.id),'list'))? `<div style="float:right;margin:0 0 8px 12px">${binderPics(b,false)}</div>`:''}
+      ${['cover','spine','list'].some(k=>bpPrev(b.id,k)||bpPdf(b.id,k))? `<div style="float:right;margin:0 0 8px 12px">${binderPics(b,false)}</div>`:''}
       <div class="shelf-sets">${st.c.sets.map(id=>{const s=SETS[id]; const n=bc.inb.filter(x=>x.s.id===id).length; return `<span style="border:1px solid #ddd;border-radius:8px;padding:3px 8px;font-size:12.5px"><a data-set="${id}">${esc(s.name)}</a> <span class="code">${esc(s.code)}</span> · ${n}/${s.total}</span>`;}).join('') || '<i>No expansions chosen.</i>'}</div>
       <div style="font-size:12.5px;color:#444">${bc.inb.length} different cards (${copies} copies) in the binder · ${bc.elsewhere.length} owned but stored elsewhere · ${bc.missing.length} still missing · ${st.c.have}/${st.c.need} pages</div>
       <details class="cards" style="clear:both"><summary>Show the cards</summary>
@@ -1264,7 +1265,7 @@ function editBinder(id, presetSets){
     b.copies=+g('bCopies').value; b.secretSingle=g('bSecret').checked; b.pockets=+g('bPockets').value; b.sides=+g('bSides').value; b.basis=g('bBasis').value; b.extraPages=+g('bExtra').value||0; b.capacity=+g('bCap').value||0;
     b.haveBinder=g('bHave').checked; b.pagesHave=+g('bPages').value||0; b.front=g('bFront').value; b.spine=g('bSpine').value; b.notes=g('bNotes').value; };
   const foot=[];
-  if(!isNew) foot.push(mkBtn('Delete binder','danger',()=>{ if(!confirmInline('Delete this binder?')) return; ['cover','spine','list'].forEach(k=>removeImage(bpKey(b.id),k,null)); deleteBinder(b.id); closeModal(); toast('Binder deleted'); }));
+  if(!isNew) foot.push(mkBtn('Delete binder','danger',()=>{ if(!confirmInline('Delete this binder?')) return; ['cover','spine','list','pdfcover','pdfspine','pdflist'].forEach(k=>removeImage(bpKey(b.id),k,null)); deleteBinder(b.id); closeModal(); toast('Binder deleted'); }));
   foot.push(mkBtn('Cancel','',closeModal));
   foot.push(mkBtn(isNew?'Create binder':'Save','pri',()=>{ read(); if(!b.name) b.name = b.sets.length? SETS[b.sets[0]].name : 'New binder'; saveBinder(b); closeModal(); toast('Binder saved'); }));
   openModal(isNew?'New binder':'Edit binder', body, foot);
@@ -1451,7 +1452,7 @@ function imgURL(setId,kind,cardKey){ const v=imgVal(setId,kind,cardKey); if(!v) 
 function imgTag(setId,kind,cardKey,style,extra){ const u=imgURL(setId,kind,cardKey); return u? `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'" style="${style||''}" ${extra||''}>` : ''; }
 const LOGOIMG={};
 function logoFor(b,asImage){ const id=(b.sets||[]).find(x=>imgURL(x,'logo')); if(!id||(b.sets||[]).length!==1) return null; if(!asImage) return id; const u=imgURL(id,'logo'); if(!LOGOIMG[u]){ const im=new Image(); if(/^https?:/.test(u)) im.crossOrigin='anonymous'; im.src=u; LOGOIMG[u]=im; } return LOGOIMG[u]; }
-function saveImages(setId){ if(mode==='local'){ lsSave(); return; } persist('images/'+setId, ()=>{ const m=S.images[setId]; return m&&(m.sym||m.logo||m.cover||m.spine||m.list||Object.keys(m.cards||{}).length)? m : null; }); }
+function saveImages(setId){ if(mode==='local'){ lsSave(); return; } persist('images/'+setId, ()=>{ const m=S.images[setId]; return m&&(Object.keys(m).some(k=>k!=='cards'&&k!=='listPdf'&&m[k])||Object.keys(m.cards||{}).length)? m : null; }); }
 function pickFile(cb,multiple,accept){ const i=document.createElement('input'); i.type='file'; i.accept=accept||'image/*'; if(multiple) i.multiple=true; i.onchange=()=>{ if(i.files.length) cb(multiple?[...i.files]:i.files[0]); }; i.click(); }
 function resizeImage(file,maxW,maxH){ return new Promise((res)=>{ const img=new Image(); img.onload=()=>{ const r=Math.min(1,maxW/img.width,maxH/img.height); if(r>=1 && file.size<400000){ URL.revokeObjectURL(img.src); res(file); return; } const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r); c.getContext('2d').drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); c.toBlob(b=>res(b||file),'image/webp',0.86); }; img.onerror=()=>res(file); img.src=URL.createObjectURL(file); }); }
 const IMG_MAX={card:[500,700],logo:[700,300],sym:[160,160],cover:[1000,1300],spine:[400,1700],list:[1700,2400]};
@@ -1466,7 +1467,7 @@ async function storeImage(setId,kind,cardKey,file){
   else { await idbOp('readwrite',st=>st.put(blob,key)); if(IDBURL[key]) URL.revokeObjectURL(IDBURL[key]); IDBURL[key]=URL.createObjectURL(blob); val='i'; }
   const m=S.images[setId]||(S.images[setId]={cards:{}}); m.cards=m.cards||{};
   if(kind==='card') m.cards[cardKey]=val; else m[kind]=val;
-  if(kind==='list') m.listPdf=isPdf;
+  if(kind==='list') delete m.listPdf;
   saveImages(setId);
   if(old&&old.startsWith('a:')&&old!==val&&assets){ try{ await assets.delete(old.slice(2)); }catch(e){} }
   if(old&&old.startsWith('s:')&&old!==val){ try{ await supa.storage.from('pictures').remove([old.slice(2)]); }catch(e){} }
@@ -1487,17 +1488,49 @@ async function removeImage(setId,kind,cardKey){
   else { const key=imgKey(setId,kind,cardKey); try{ await idbOp('readwrite',st=>st.delete(key)); }catch(e){} if(IDBURL[key]){ URL.revokeObjectURL(IDBURL[key]); delete IDBURL[key]; } }
 }
 function bpKey(bid){ return 'binder-'+bid; }
+// Each binder can hold, per slot (cover / spine / list): a preview picture (kind) and a PDF (kind 'pdf'+slot).
+// Older card lists saved as a PDF straight into 'list' carry the listPdf flag.
 function listIsPdf(bid){ return !!(S.images[bpKey(bid)]||{}).listPdf; }
+function bpPdf(bid,kind){ const k=bpKey(bid); return imgURL(k,'pdf'+kind) || (kind==='list'&&listIsPdf(bid)? imgURL(k,'list') : null); }
+function bpPrev(bid,kind){ if(kind==='list'&&listIsPdf(bid)) return null; return imgURL(bpKey(bid),kind); }
+const SLOT_LABEL={cover:'Front label',spine:'Spine label',list:'Card list'};
+function bpSlot(b,kind,w,h,edit,fallback){
+  const prev=bpPrev(b.id,kind), pdf=bpPdf(b.id,kind);
+  const box= prev? `<img src="${esc(prev)}" data-bpic="view|${b.id}|${kind}" style="max-width:${w}px;max-height:${h}px;border-radius:4px;box-shadow:0 1px 6px rgba(0,0,0,.3);cursor:zoom-in" title="Click to enlarge">`
+    : pdf? `<a href="${esc(pdf)}" target="_blank" rel="noopener" style="display:grid;place-items:center;width:${Math.min(w,160)}px;height:${Math.min(h,200)}px;border:1px solid #ccd;border-radius:6px;background:#f7f7fb;margin:auto;font-size:12px;text-decoration:none;text-align:center">📄<br>PDF<br><span style="font-size:11px;color:#777">no preview</span></a>`
+    : fallback? fallback
+    : edit? `<div data-bpic="up|${b.id}|${kind}" class="rw" style="width:${Math.min(w,160)}px;height:${Math.min(h,200)}px;border:2px dashed #ccd;border-radius:6px;display:grid;place-items:center;color:#889;font-size:11.5px;cursor:pointer;margin:auto;text-align:center;padding:4px">＋ Upload<br>PDF or picture</div>` : '';
+  const links=[pdf?`<a href="${esc(pdf)}" target="_blank" rel="noopener">📄 Open / print PDF</a>`:'',
+    edit&&(prev||pdf)?`<a class="rw" data-bpic="up|${b.id}|${kind}">Replace</a>`:'', edit&&fallback&&!prev&&!pdf?`<a class="rw" data-bpic="up|${b.id}|${kind}">Upload PDF or picture</a>`:'',
+    edit&&pdf?`<a class="rw" data-bpic="upimg|${b.id}|${kind}">${prev?'Change':'Add'} preview</a>`:'', edit&&(prev||pdf)?`<a class="rw" data-bpic="rm|${b.id}|${kind}" style="color:var(--bad)">Remove</a>`:''].filter(Boolean);
+  return {box, links:links.join(' · ')};
+}
 function binderPics(b,edit){
-  const slot=(kind,label,w,h)=>{ const u=imgURL(bpKey(b.id),kind);
-    return `<div style="text-align:center;width:${w+10}px"><div style="font-size:11.5px;font-weight:600;color:#555;margin-bottom:3px">${label}</div>
-      ${u&&kind==='list'&&listIsPdf(b.id)? `<a href="${esc(u)}" target="_blank" rel="noopener" style="display:grid;place-items:center;width:${w}px;height:${Math.min(h,110)}px;border:1px solid #ccd;border-radius:6px;background:#f7f7fb;margin:auto;font-size:12px;text-decoration:none">📄<br>Open PDF</a>`
-       : u? `<img src="${esc(u)}" data-bpic="view|${b.id}|${kind}" style="max-width:${w}px;max-height:${h}px;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:zoom-in" title="Click to enlarge">`
-         : (edit? `<div data-bpic="up|${b.id}|${kind}" class="rw" style="width:${w}px;height:${Math.min(h,110)}px;border:2px dashed #ccd;border-radius:6px;display:grid;place-items:center;color:#889;font-size:11.5px;cursor:pointer;margin:auto">＋ Add</div>` : '')}
-      ${edit&&u? `<div class="rw" style="margin-top:4px;font-size:11.5px"><a data-bpic="up|${b.id}|${kind}">Change</a> · <a data-bpic="rm|${b.id}|${kind}" style="color:var(--bad)">Remove</a></div>`:''}</div>`; };
-  const cov=imgURL(bpKey(b.id),'cover'), sp=imgURL(bpKey(b.id),'spine'), li=imgURL(bpKey(b.id),'list');
-  if(!edit && !cov && !sp && !li) return '';
-  return `<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">${edit||cov?slot('cover','Cover',110,150):''}${edit||sp?slot('spine','Spine',40,150):''}${edit||li?slot('list','Card list',110,150):''}</div>`;
+  const any=['cover','spine','list'].some(k=>bpPrev(b.id,k)||bpPdf(b.id,k));
+  if(!edit && !any) return '';
+  const one=(kind,w,h)=>{ if(!edit&&!bpPrev(b.id,kind)&&!bpPdf(b.id,kind)) return ''; const x=bpSlot(b,kind,w,h,edit);
+    return `<div style="text-align:center;width:${Math.max(w,110)+10}px"><div style="font-size:11.5px;font-weight:600;color:#555;margin-bottom:3px">${SLOT_LABEL[kind]}</div>${x.box}${x.links?`<div style="margin-top:4px;font-size:11px;line-height:1.5">${x.links}</div>`:''}</div>`; };
+  return `<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">${one('cover',110,150)}${one('spine',40,150)}${one('list',110,150)}</div>`;
+}
+// Turn page 1 of a PDF into a preview picture (uses pdf.js from cdnjs)
+const PDFJS='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+async function pdfPreview(file){
+  if(!window.pdfjsLib){ await loadScript(PDFJS+'pdf.min.js');
+    try{ const t=await (await fetch(PDFJS+'pdf.worker.min.js')).text(); window.pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(new Blob([t],{type:'text/javascript'})); }
+    catch(e){ window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+'pdf.worker.min.js'; } }
+  const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise; const page=await pdf.getPage(1);
+  const v1=page.getViewport({scale:1}); const v=page.getViewport({scale:Math.min(3,1600/Math.max(v1.width,v1.height))});
+  const c=document.createElement('canvas'); c.width=Math.round(v.width); c.height=Math.round(v.height); const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+  await page.render({canvasContext:ctx,viewport:v}).promise;
+  return await new Promise(r=>c.toBlob(r,'image/webp',0.9));
+}
+async function uploadBinderFile(bid,kind,f,imageOnly){
+  const key=bpKey(bid); const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name||'');
+  if(isPdf&&!imageOnly){
+    toast('Uploading PDF…'); await storeImage(key,'pdf'+kind,null,f);
+    try{ toast('Making a preview…'); const blob=await pdfPreview(f); if(blob){ await storeImage(key,kind,null,new File([blob],'preview.webp',{type:'image/webp'})); } toast('PDF saved with a preview'); }
+    catch(e){ toast('PDF saved. A preview couldn\'t be made, so tap "Add preview" to add a picture.'); }
+  } else { toast('Uploading…'); await storeImage(key,kind,null,f); toast('Picture saved'); }
 }
 function normNum(x){ return String(x).toLowerCase().replace(/^0+(?=\w)/,''); }
 async function bulkUploadCards(setId,files){
