@@ -726,7 +726,18 @@ function shopLinks(s,r,setId,key){
   const p=((PRICES[setId]||{}).c||{})[key]||[]; const q=encodeURIComponent(`${r[2]} ${r[1]} ${s.name} pokemon card`);
   return `<a href="${esc(p[4]||'https://www.tcgplayer.com/search/pokemon/product?q='+encodeURIComponent(r[2]+' '+s.name))}" target="_blank" rel="noopener">TCGplayer</a> · <a href="${esc(p[5]||'https://www.cardmarket.com/en/Pokemon/Products/Search?searchString='+encodeURIComponent(r[2]))}" target="_blank" rel="noopener">Cardmarket</a> · <a href="https://www.ebay.com/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1" target="_blank" rel="noopener">eBay sold</a> · <a href="https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(r[2]+' '+r[1]+' '+s.name)}" target="_blank" rel="noopener">PriceCharting</a>`;
 }
-let prMode='sell', prScope='', prSort='tcg', prMin=0, prOpen={};
+let prMode='sell', prScope='', prSort='tcg', prMin=0, prOpen={}, prExport=[];
+function exportRows(){ return prExport.map(x=>({exp:x.s.name, code:x.s.code||'', no:x.r[1], card:x.r[2], ver:x.v==='r'?'Regular':(isMainNum(x.r[1],x.s.printed)?'Reverse holo':'2nd copy'), qty:x.q, rar:rarLabel(T.rar[x.r[3]]||''), usd:x.pt, eur:x.pc})); }
+function exportText(){
+  const rows=exportRows(); const head={sell:'Cards for sale (bulk)',buy:'Cards wanted',all:'My cards'}[prMode];
+  const tot=(k)=>rows.reduce((a,x)=>a+(x[k]||0)*x.qty,0);
+  return `${head} · ${rows.reduce((a,x)=>a+x.qty,0)} cards\n\n`+rows.map(x=>`${x.qty}x ${x.card} (${x.exp}${x.code?' '+x.code:''} ${x.no}) ${x.ver} · ${x.rar}${x.usd!=null?` · $${x.usd.toFixed(2)}`:''}${x.eur!=null?` · €${x.eur.toFixed(2)}`:''}`).join('\n')
+    +`\n\nTotal market value: $${tot('usd').toFixed(2)} (TCGplayer) · €${tot('eur').toFixed(2)} (Cardmarket)`;
+}
+function exportCSV(){
+  const q=v=>{ v=v==null?'':String(v); return /[",\n]/.test(v)? '"'+v.replace(/"/g,'""')+'"' : v; };
+  return ['Expansion,Set code,Number,Card,Version,Quantity,Rarity,TCGplayer USD,Cardmarket EUR'].concat(exportRows().map(x=>[x.exp,x.code,x.no,x.card,x.ver,x.qty,x.rar,x.usd!=null?x.usd.toFixed(2):'',x.eur!=null?x.eur.toFixed(2):''].map(q).join(','))).join('\r\n');
+}
 function viewPrices(el){
   const started=T.sets.filter(s=>S.owned[s.id]&&Object.keys(S.owned[s.id]).length);
   el.innerHTML=`<h1 class="ft">Prices: sell &amp; buy</h1><div class="sub">Market prices from TCGplayer (USD) and Cardmarket (EUR), with links to compare on eBay and PriceCharting</div>
@@ -736,7 +747,7 @@ function viewPrices(el){
     <select id="prScope"><option value="">All expansions I've started (${started.length})</option>${T.series.map(n=>{ const ss=SERIES_SETS[n].filter(s=>started.includes(s)); return ss.length?`<optgroup label="${esc(n)}">${ss.map(s=>`<option value="${s.id}" ${prScope===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</optgroup>`:''; }).join('')}</select>
     <select id="prSort"><option value="tcg" ${prSort==='tcg'?'selected':''}>Sort: TCGplayer price</option><option value="cm" ${prSort==='cm'?'selected':''}>Sort: Cardmarket price</option><option value="num" ${prSort==='num'?'selected':''}>Sort: card number</option></select>
     <label style="font-size:12.5px">Hide under <select id="prMin">${[0,0.25,0.5,1,2,5].map(v=>`<option value="${v}" ${+prMin===v?'selected':''}>${v?'$/€'+v.toFixed(2):'nothing'}</option>`).join('')}</select></label>
-    <button class="btn pri" id="prLoad" style="margin-left:auto">⟳ Load / refresh prices</button>
+    <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap"><button class="btn" id="prCopy" title="Copy this list as text">📋 Copy list</button><button class="btn" id="prCsv" title="Download this list as a spreadsheet file">⬇ Download CSV</button><button class="btn pri" id="prLoad">⟳ Load / refresh prices</button></span>
   </div>
   <div id="prStatus" style="font-size:12.5px;color:#555;margin:4px 0 8px"></div>
   <div id="prRes"></div>`;
@@ -746,7 +757,7 @@ function viewPrices(el){
   const wantedKeys=setId=>{ const o=ownedOf(setId); return T.cards[setId].filter(r=>{ const e=o[r[0]];
       if(prMode==='sell') return e&&(e[1]||e[4]); if(prMode==='buy') return !regN(e)||!spN(e); return qn(e)>0; }).map(r=>r[0]); };
   const render=()=>{
-    const sets=scopeSets(); const blocks=[]; let totT=0,totC=0,count=0, missingPrices=0;
+    const sets=scopeSets(); const blocks=[]; let totT=0,totC=0,count=0, missingPrices=0; prExport=[];
     T.series.forEach((ser,si)=>{
       const ex=[];
       SERIES_SETS[ser].forEach(s=>{ if(!sets.includes(s)) return; const o=ownedOf(s.id); const rows=[];
@@ -761,7 +772,7 @@ function viewPrices(el){
         if(!rows.length) return;
         rows.sort(prSort==='num'? (a,b)=>T.cards[s.id].indexOf(a.r)-T.cards[s.id].indexOf(b.r) : prSort==='cm'? (a,b)=>(b.pc??-1)-(a.pc??-1) : (a,b)=>(b.pt??-1)-(a.pt??-1));
         const st=rows.reduce((a,x)=>a+(x.pt||0)*x.q,0), sc=rows.reduce((a,x)=>a+(x.pc||0)*x.q,0); totT+=st; totC+=sc; count+=rows.reduce((a,x)=>a+x.q,0);
-        ex.push({s,rows,st,sc}); });
+        ex.push({s,rows,st,sc}); prExport.push(...rows); });
       if(!ex.length) return;
       blocks.push(`<h2>${esc(ser)}</h2><div class="roundy" style="${styleVars(ser)}"><table>
         <tr><th class="fxcell"></th><th class="hide-m">Logo</th><th>Expansion</th><th>Cards</th><th>TCGplayer</th><th>Cardmarket</th></tr>
@@ -790,6 +801,14 @@ function viewPrices(el){
   el.querySelector('#prScope').onchange=e=>{ prScope=e.target.value; render(); if(pricesAllowed()) load(); };
   el.querySelector('#prSort').onchange=e=>{ prSort=e.target.value; render(); };
   el.querySelector('#prMin').onchange=e=>{ prMin=+e.target.value; render(); };
+  el.querySelector('#prCopy').onclick=async()=>{ if(!prExport.length){ toast('Nothing to copy'); return; } const t=exportText();
+    try{ await navigator.clipboard.writeText(t); toast(`Copied ${prExport.length} lines`); }
+    catch(e){ openModal('Copy list',`<p style="font-size:12.5px">Select all the text below and copy it.</p><textarea style="width:100%;height:50vh" readonly>${esc(t)}</textarea>`,[mkBtn('Close','pri',closeModal)]); setTimeout(()=>{ const ta=document.querySelector('#mBody textarea'); ta&&ta.select(); },50); } };
+  el.querySelector('#prCsv').onclick=async()=>{ if(!prExport.length){ toast('Nothing to download'); return; }
+    const name=`${{sell:'bulk-to-sell',buy:'cards-to-buy',all:'my-cards'}[prMode]}-${new Date().toISOString().slice(0,10)}.csv`; const blob=new Blob(['\ufeff'+exportCSV()],{type:'text/csv'});
+    const d=window.__dl;
+    if(d){ try{ await d.save({filename:name,data:blob}); toast('Saved '+name); }catch(e){ if(!(e&&e.code==='declined')) toast('Could not save the file'); } return; }
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); toast('Downloaded '+name); };
   el.querySelector('#prLoad').onclick=()=>{ scopeSets().forEach(s=>{ delete PRICES[s.id]; }); PTCG_DOWN=false; load(); };
   render();
   if(pricesAllowed()) load();
